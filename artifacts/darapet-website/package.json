@@ -75,6 +75,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "embla-carousel-autoplay": "^8.6.0",
     "react-countup": "^6.5.3",
     "react-type-animation": "^3.2.0"
   }

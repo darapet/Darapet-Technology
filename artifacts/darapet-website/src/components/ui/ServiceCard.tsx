@@ -19,7 +19,7 @@ export default function ServiceCard({ service }: { service: ServiceCategory }) {
         
         <h3 className="text-xl font-display font-bold mb-3 relative z-10">{service.title}</h3>
         <p className="text-foreground/70 mb-6 flex-grow relative z-10">
-          {service.shortDescription}
+          {service.description}
         </p>
         
         <div className="mt-auto relative z-10">

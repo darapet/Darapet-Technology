@@ -3,8 +3,8 @@ import { motion } from 'framer-motion';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { Mail, MapPin, Phone, MessageSquare, Send } from 'lucide-react';
-import { SiLinkedin, SiTwitter, SiInstagram } from 'react-icons/si';
+import { Mail, MapPin, Phone, MessageSquare, Send, Linkedin } from 'lucide-react';
+import { SiX, SiInstagram } from 'react-icons/si';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -139,10 +139,10 @@ export default function ContactPage() {
                   <p className="text-sm font-medium text-muted-foreground mb-4">Follow us on social media</p>
                   <div className="flex items-center gap-4">
                     <a href="#" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white hover:bg-primary transition-colors">
-                      <SiLinkedin size={18} />
+                      <Linkedin size={18} />
                     </a>
                     <a href="#" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white hover:bg-primary transition-colors">
-                      <SiTwitter size={18} />
+                      <SiX size={18} />
                     </a>
                     <a href="#" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-white hover:bg-primary transition-colors">
                       <SiInstagram size={18} />

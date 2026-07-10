@@ -1,4 +1,14 @@
-export const portfolio = [
+export type PortfolioItem = {
+  id: string;
+  title: string;
+  category: string;
+  categoryLabel: string;
+  description: string;
+  image: string;
+  client: string;
+};
+
+export const portfolio: PortfolioItem[] = [
   {
     id: '1',
     title: 'PaySwift Fintech App',

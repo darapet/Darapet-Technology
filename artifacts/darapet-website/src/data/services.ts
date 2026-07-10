@@ -85,6 +85,8 @@ export const services = [
   }
 ];
 
+export type ServiceCategory = (typeof services)[number];
+
 export const getService = (id: string) => services.find(s => s.id === id);
 export const getSubService = (serviceId: string, subId: string) => {
   const service = getService(serviceId);

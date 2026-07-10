@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'wouter';
-import { Zap, Mail, MapPin, Phone, ArrowRight } from 'lucide-react';
-import { SiLinkedin, SiTwitter, SiInstagram, SiGithub, SiYoutube } from 'react-icons/si';
+import { Zap, Mail, MapPin, Phone, ArrowRight, Linkedin } from 'lucide-react';
+import { SiX, SiInstagram, SiGithub, SiYoutube } from 'react-icons/si';
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
@@ -29,10 +29,10 @@ export default function Footer() {
             </p>
             <div className="flex items-center gap-4">
               <a href="#" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-muted-foreground hover:bg-primary hover:text-white transition-colors" aria-label="LinkedIn">
-                <SiLinkedin size={18} />
+                <Linkedin size={18} />
               </a>
               <a href="#" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-muted-foreground hover:bg-primary hover:text-white transition-colors" aria-label="Twitter">
-                <SiTwitter size={18} />
+                <SiX size={18} />
               </a>
               <a href="#" className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-muted-foreground hover:bg-primary hover:text-white transition-colors" aria-label="Instagram">
                 <SiInstagram size={18} />
