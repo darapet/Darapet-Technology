@@ -16,6 +16,19 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- SPA GitHub Pages redirect decode: pairs with 404.html -->
+    <script>
+      (function(l) {
+        var p = new URLSearchParams(l.search).get('p');
+        if (p) {
+          var q = new URLSearchParams(l.search).get('q');
+          window.history.replaceState(null, null,
+            l.pathname.replace(/\/$/, '') + '/' + p.replace(/~and~/g, '&') +
+            (q ? '?' + q.replace(/~and~/g, '&') : '') + l.hash
+          );
+        }
+      }(window.location))
+    </script>
     <script type="module" crossorigin src="/Darapet-Technology/assets/index-DY6uF7H3.js"></script>
     <link rel="stylesheet" crossorigin href="/Darapet-Technology/assets/index-C__ZBWf7.css">
   </head>
