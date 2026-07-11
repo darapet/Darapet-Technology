@@ -4,14 +4,15 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
-import { LayoutDashboard, Users, Mail, Settings, LogOut, ShieldCheck, Menu, X, Plus } from 'lucide-react';
+import { LayoutDashboard, Mail, Settings, LogOut, ShieldCheck, Menu, X, Plus, History, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard, exact: true },
-  { href: '/leads', label: 'Leads', icon: Users },
-  { href: '/email', label: 'Email', icon: Mail },
+  { href: '/campaigns', label: 'Campaigns', icon: Mail },
+  { href: '/campaigns/history', label: 'History', icon: History },
+  { href: '/campaigns/automation', label: 'Automation', icon: Zap },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -55,10 +56,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </nav>
 
           <div className="flex items-center gap-2 ml-auto">
-            {/* New scrape CTA */}
-            <Link href="/leads/new">
+            {/* New Campaign CTA */}
+            <Link href="/campaigns/new">
               <a className="hidden sm:flex items-center gap-1.5 bg-primary text-primary-foreground px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">
-                <Plus className="w-3.5 h-3.5" /> New Scrape
+                <Plus className="w-3.5 h-3.5" /> New Campaign
               </a>
             </Link>
 

@@ -16,12 +16,14 @@ import { RestrictedPage } from '@/pages/auth/RestrictedPage';
 
 // App pages
 import { Dashboard } from '@/pages/dashboard';
-import { LeadHistory } from '@/pages/leads/LeadHistory';
-import { ScrapePage } from '@/pages/leads/ScrapePage';
-import { GeneratedLeads } from '@/pages/leads/GeneratedLeads';
-import { EmailPage } from '@/pages/email/EmailPage';
 import { SettingsPage } from '@/pages/settings';
 import NotFound from '@/pages/not-found';
+
+// Campaign pages
+import { CampaignsPage } from '@/pages/campaigns/CampaignsPage';
+import { NewCampaignPage } from '@/pages/campaigns/NewCampaignPage';
+import { CampaignHistoryPage } from '@/pages/campaigns/CampaignHistoryPage';
+import { AutomationPage } from '@/pages/campaigns/AutomationPage';
 
 // Admin pages
 import { AdminLayout } from '@/pages/admin/AdminLayout';
@@ -103,26 +105,34 @@ function AppRoutes() {
           )}
         </ProtectedRoute>
       </Route>
-      <Route path="/leads">
+
+      {/* Campaign routes */}
+      <Route path="/campaigns">
         <ProtectedRoute>
-          <AppLayout><LeadHistory /></AppLayout>
+          <AppLayout><CampaignsPage /></AppLayout>
         </ProtectedRoute>
       </Route>
-      <Route path="/leads/new">
+      <Route path="/campaigns/new">
         <ProtectedRoute>
-          <AppLayout><ScrapePage /></AppLayout>
+          <AppLayout><NewCampaignPage /></AppLayout>
         </ProtectedRoute>
       </Route>
-      <Route path="/leads/:id">
+      <Route path="/campaigns/history">
         <ProtectedRoute>
-          <AppLayout><GeneratedLeads /></AppLayout>
+          <AppLayout><CampaignHistoryPage /></AppLayout>
         </ProtectedRoute>
       </Route>
+      <Route path="/campaigns/automation">
+        <ProtectedRoute>
+          <AppLayout><AutomationPage /></AppLayout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* Legacy email route redirect */}
       <Route path="/email">
-        <ProtectedRoute>
-          <AppLayout><EmailPage /></AppLayout>
-        </ProtectedRoute>
+        <Redirect to="/campaigns" />
       </Route>
+
       <Route path="/settings">
         <ProtectedRoute>
           <AppLayout><SettingsPage /></AppLayout>
