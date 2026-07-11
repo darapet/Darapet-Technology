@@ -90,12 +90,7 @@ export function ScrapePage() {
     const apiKey = adminSettings?.google_search_api_key;
     const cx = adminSettings?.google_search_engine_id;
 
-    if (!apiKey || !cx) {
-      toast({ variant: 'destructive', title: 'Scraping not configured', description: 'Admin has not set up the Google Search API key yet.' });
-      setScraping(false);
-      setStep(2);
-      return;
-    }
+    // API key is optional — backend falls back to DuckDuckGo if not set
 
     const platform = SOCIAL_PLATFORMS.find(p => p.id === selectedSocial);
     const allResults: ScrapeResult[] = [];

@@ -16,9 +16,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- SPA GitHub Pages redirect decode: pairs with 404.html -->
     <script>
       (function(l) {
+        // Step 1: decode the 404.html SPA redirect (?p=path)
         var p = new URLSearchParams(l.search).get('p');
         if (p) {
           var q = new URLSearchParams(l.search).get('q');
@@ -26,6 +26,14 @@
             l.pathname.replace(/\/$/, '') + '/' + p.replace(/~and~/g, '&') +
             (q ? '?' + q.replace(/~and~/g, '&') : '') + l.hash
           );
+          l = window.location;
+        }
+        // Step 2: strip the GitHub Pages base path (/Darapet-Technology)
+        // so Wouter (compiled with base="") can match routes like /, /login, /leads etc.
+        var base = '/Darapet-Technology';
+        if (l.pathname === base || l.pathname.startsWith(base + '/')) {
+          var stripped = l.pathname.slice(base.length) || '/';
+          window.history.replaceState(null, null, stripped + l.search + l.hash);
         }
       }(window.location))
     </script>
