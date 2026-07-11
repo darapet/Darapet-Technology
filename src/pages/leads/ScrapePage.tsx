@@ -20,6 +20,9 @@ interface ScrapeResult {
   leads: Array<{ name: string; url: string; email?: string; source: string }>;
 }
 
+// Replit scrape backend — visits actual pages to extract real emails
+const SCRAPE_API = 'https://3a63fe3e-5067-49b0-82f9-ba9b2991e703-00-iu9aps3qq093.riker.replit.dev/api/scrape';
+
 export function ScrapePage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -79,13 +82,11 @@ export function ScrapePage() {
 
   const filteredCountries = COUNTRIES.filter(c => c.name.toLowerCase().includes(countrySearch.toLowerCase()));
 
-  // Google CSE scrape
   const doScrape = async () => {
     if (!user) return;
     setScraping(true);
     setStep(3);
 
-    const allResults: ScrapeResult[] = [];
     const apiKey = adminSettings?.google_search_api_key;
     const cx = adminSettings?.google_search_engine_id;
 
@@ -97,67 +98,55 @@ export function ScrapePage() {
     }
 
     const platform = SOCIAL_PLATFORMS.find(p => p.id === selectedSocial);
+    const allResults: ScrapeResult[] = [];
 
     for (const countryCode of selectedCountries) {
       const country = COUNTRIES.find(c => c.code === countryCode);
       if (!country) continue;
       const states = selectedStates[countryCode] || [];
-      const locations = states.length > 0 ? states : [country.name];
-      const countryLeads: ScrapeResult['leads'] = [];
+      // Pass up to 5 locations per country to the backend
+      const locations = states.length > 0 ? states.slice(0, 5) : [country.name];
 
-      for (const location of locations.slice(0, 3)) {
-        const query = scrapeType === 'email'
-          ? `"${niche}" "${location}" email`
-          : `site:${platform?.domain || ''} "${niche}" "${location}"`;
+      try {
+        const res = await fetch(SCRAPE_API, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            googleApiKey: apiKey,
+            googleCx: cx,
+            niche,
+            locations,
+            amount,
+            scrapeType,
+            socialDomain: platform?.domain || '',
+          }),
+        });
 
-        try {
-          const res = await fetch(
-            `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(query)}&num=10`
-          );
-          if (!res.ok) {
-            const errData = await res.json().catch(() => ({}));
-            console.error('CSE API error:', res.status, errData);
-            toast({ variant: 'destructive', title: `Search API error (${res.status})`, description: errData?.error?.message || 'Check your Google API key and Search Engine ID.' });
-            break;
-          }
-          const data = await res.json();
-          const items: Record<string, unknown>[] = data.items || [];
-
-          for (const item of items) {
-            if (scrapeType === 'social') {
-              // Escape ALL dots in domain for regex
-              const escapedDomain = (platform?.domain || '').replace(/\./g, '\\.');
-              const socialRegex = new RegExp(`https?://(www\\.)?${escapedDomain}/[\\w.@_/-]+`, 'i');
-              // Check item.link first (direct profile), then snippet for mentioned URLs
-              const searchText = [item.link as string, item.snippet as string, JSON.stringify(item.pagemap || {})].join(' ');
-              const urlMatch = searchText.match(socialRegex);
-              if (urlMatch) {
-                const profileUrl = urlMatch[0].split('?')[0]; // strip query params
-                if (!countryLeads.some(l => l.url === profileUrl)) {
-                  countryLeads.push({ name: (item.title as string)?.split(/[-|–]/)[0]?.trim() || 'Unknown', url: profileUrl, source: item.link as string });
-                }
-              }
-            } else {
-              // Search for email in snippet, title, and pagemap
-              const searchText = [item.snippet, item.title, JSON.stringify(item.pagemap || {})].join(' ');
-              const emailMatch = searchText.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
-              if (emailMatch) {
-                const email = emailMatch[0].toLowerCase();
-                if (!countryLeads.some(l => l.email === email)) {
-                  countryLeads.push({ name: (item.title as string)?.split(/[-|–]/)[0]?.trim() || 'Unknown', url: item.link as string, email, source: item.link as string });
-                }
-              }
-            }
-          }
-        } catch (err) {
-          console.error('Scrape error:', err);
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}) as { error?: string });
+          toast({
+            variant: 'destructive',
+            title: 'Scrape failed',
+            description: (errData as { error?: string }).error || `Server error ${res.status}`,
+          });
+          break;
         }
 
-        if (countryLeads.length >= amount) break;
-      }
+        const data = await res.json() as {
+          results: Array<{ location: string; leads: ScrapeResult['leads'] }>;
+        };
 
-      if (countryLeads.length > 0) {
-        allResults.push({ country: country.name, leads: countryLeads.slice(0, amount) });
+        const countryLeads: ScrapeResult['leads'] = data.results.flatMap(r => r.leads);
+        if (countryLeads.length > 0) {
+          allResults.push({ country: country.name, leads: countryLeads.slice(0, amount) });
+        }
+      } catch {
+        toast({
+          variant: 'destructive',
+          title: 'Network error',
+          description: 'Could not reach the scrape server. Make sure it is running.',
+        });
+        break;
       }
     }
 
@@ -175,7 +164,6 @@ export function ScrapePage() {
 
     if (batch) {
       setBatchId(batch.id);
-      // Save individual leads
       const leadsToInsert = allResults.flatMap(r =>
         r.leads.map(lead => ({
           batch_id: batch.id,
@@ -322,7 +310,7 @@ export function ScrapePage() {
                   <button onClick={() => setScrapeType('email')} className={cn('p-4 rounded-xl border-2 text-left transition-all', scrapeType === 'email' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30')}>
                     <Mail className="w-6 h-6 mb-2 text-primary" />
                     <p className="font-semibold">Email Addresses</p>
-                    <p className="text-xs text-muted-foreground mt-1">Find business emails from search results</p>
+                    <p className="text-xs text-muted-foreground mt-1">Visits real pages to find business emails</p>
                   </button>
                   <button onClick={() => setScrapeType('social')} className={cn('p-4 rounded-xl border-2 text-left transition-all', scrapeType === 'social' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30')}>
                     <Share2 className="w-6 h-6 mb-2 text-primary" />
@@ -382,7 +370,8 @@ export function ScrapePage() {
                 <CardContent className="py-16 text-center space-y-4">
                   <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto" />
                   <p className="text-lg font-semibold">Scraping in progress...</p>
-                  <p className="text-muted-foreground text-sm">Searching across {selectedCountries.length} countr{selectedCountries.length !== 1 ? 'ies' : 'y'} for <strong>{niche}</strong></p>
+                  <p className="text-muted-foreground text-sm">Visiting real pages across {selectedCountries.length} countr{selectedCountries.length !== 1 ? 'ies' : 'y'} for <strong>{niche}</strong></p>
+                  <p className="text-xs text-muted-foreground">This may take 15–30 seconds while we fetch live pages</p>
                 </CardContent>
               </Card>
             ) : (
