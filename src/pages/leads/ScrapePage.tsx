@@ -114,6 +114,7 @@ export function ScrapePage() {
             amount,
             scrapeType,
             socialDomain: platform?.domain || '',
+            countryCode,
           }),
         });
 
