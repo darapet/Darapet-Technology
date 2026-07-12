@@ -123,6 +123,9 @@ export type Database = {
           suspend_reason: string | null;
           suspend_requirements: string | null;
           review_request: string | null;
+          review_status: string | null;
+          review_rejection_note: string | null;
+          restriction_expires_at: string | null;
           daily_email_limit: number | null;
           brevo_api_key: string | null;
           google_search_api_key: string | null;
@@ -147,6 +150,9 @@ export type Database = {
           suspend_reason?: string | null;
           suspend_requirements?: string | null;
           review_request?: string | null;
+          review_status?: string | null;
+          review_rejection_note?: string | null;
+          restriction_expires_at?: string | null;
           daily_email_limit?: number | null;
           brevo_api_key?: string | null;
           google_search_api_key?: string | null;
@@ -170,6 +176,9 @@ export type Database = {
           suspend_reason?: string | null;
           suspend_requirements?: string | null;
           review_request?: string | null;
+          review_status?: string | null;
+          review_rejection_note?: string | null;
+          restriction_expires_at?: string | null;
           daily_email_limit?: number | null;
           brevo_api_key?: string | null;
           google_search_api_key?: string | null;
@@ -291,7 +300,10 @@ export type Database = {
           template_id: string | null;
           subject: string | null;
           body: string | null;
+          recipients: Json | null;
+          sent_count: number | null;
           schedule_at: string | null;
+          scheduled_at: string | null;
           sent_at: string | null;
           created_at: string | null;
           updated_at: string | null;
@@ -303,8 +315,12 @@ export type Database = {
           template_id?: string | null;
           subject?: string | null;
           body?: string | null;
+          recipients?: Json | null;
+          sent_count?: number | null;
           schedule_at?: string | null;
+          scheduled_at?: string | null;
           sent_at?: string | null;
+          created_at?: string | null;
           updated_at?: string | null;
         };
         Update: {
@@ -314,7 +330,10 @@ export type Database = {
           template_id?: string | null;
           subject?: string | null;
           body?: string | null;
+          recipients?: Json | null;
+          sent_count?: number | null;
           schedule_at?: string | null;
+          scheduled_at?: string | null;
           sent_at?: string | null;
           updated_at?: string | null;
         };
@@ -411,6 +430,7 @@ export type Database = {
           sent_at: string | null;
           error_msg: string | null;
           created_at: string | null;
+          recipients: Json | null;
         };
         Insert: {
           user_id?: string | null;
@@ -425,6 +445,8 @@ export type Database = {
           scheduled_at?: string | null;
           sent_at?: string | null;
           error_msg?: string | null;
+          created_at?: string | null;
+          recipients?: Json | null;
         };
         Update: {
           user_id?: string | null;
@@ -439,6 +461,8 @@ export type Database = {
           scheduled_at?: string | null;
           sent_at?: string | null;
           error_msg?: string | null;
+          created_at?: string | null;
+          recipients?: Json | null;
         };
         Relationships: NoRelationships;
       };
@@ -586,10 +610,14 @@ export type ActivityLog = Database['public']['Tables']['activity_logs']['Row'];
 
 export type UserStatus = 'active' | 'suspended' | 'restricted' | 'banned';
 
+export type ReviewStatus = 'none' | 'pending' | 'rejected';
+
+export type RestrictionFieldType = 'text' | 'number' | 'date' | 'file' | 'image' | 'camera';
+
 export interface RestrictionField {
   id: string;
   label: string;
-  type: 'text' | 'number' | 'date' | 'file';
+  type: RestrictionFieldType;
   required: boolean;
 }
 
@@ -597,4 +625,8 @@ export interface RestrictionRequirement {
   title: string;
   description: string;
   fields: RestrictionField[];
+  submission?: Record<string, string>;
+  submitted_at?: string;
 }
+
+export type DurationUnit = 'hours' | 'days' | 'permanent';

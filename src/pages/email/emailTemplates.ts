@@ -1,3 +1,8 @@
+import {
+  Briefcase, Rocket, Newspaper, Sparkles, Repeat2, Handshake, Target, PartyPopper, Waves, Heart,
+  type LucideIcon,
+} from 'lucide-react';
+
 interface TemplateProps {
   brandName: string;
   logoUrl: string;
@@ -12,9 +17,32 @@ interface EmailTemplate {
   id: string;
   name: string;
   category: string;
-  emoji: string;
+  /** In-app UI icon (Lucide component) shown in the template picker — replaces the old emoji glyphs. */
+  icon: LucideIcon;
   renderHTML: (props: TemplateProps) => string;
 }
+
+// Lightweight inline-SVG icon badges for use inside the sent email HTML itself, so
+// recipients see a crisp real icon instead of an emoji glyph (which renders
+// inconsistently — or as a "tofu" box — across mail clients and OSes).
+const ICON_PATHS = {
+  sparkles: `<path d="m12 3-1.9 5.8a2 2 0 0 1-1.287 1.288L3 12l5.8 1.9a2 2 0 0 1 1.288 1.287L12 21l1.9-5.8a2 2 0 0 1 1.287-1.288L21 12l-5.8-1.9a2 2 0 0 1-1.288-1.287Z"/>`,
+  target: `<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>`,
+  heart: `<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>`,
+};
+
+function svgIcon(paths: string, size: number, fill: boolean) {
+  const svg = fill
+    ? `<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}' viewBox='0 0 24 24' fill='#ffffff' stroke='none'>${paths}</svg>`
+    : `<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}' viewBox='0 0 24 24' fill='none' stroke='#ffffff' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'>${paths}</svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+const iconBadge = (icon: keyof typeof ICON_PATHS, size = 40, fill = false, extraStyle = '') =>
+  `<img src="${svgIcon(ICON_PATHS[icon], size, fill)}" width="${size}" height="${size}" alt="" style="display:block;margin:0 auto 12px;${extraStyle}">`;
+
+const iconInline = (icon: keyof typeof ICON_PATHS, size = 14) =>
+  `<img src="${svgIcon(ICON_PATHS[icon], size, false)}" width="${size}" height="${size}" alt="" style="display:inline-block;vertical-align:middle;margin-right:6px;">`;
 
 // Shared wrapper: table-based layout for maximum email client compatibility
 const wrap = (preheader: string, headerBg: string, headerContent: string, bodyContent: string, footerContent: string, props: TemplateProps) => `
@@ -113,7 +141,7 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
     id: 'professional',
     name: 'Professional Outreach',
     category: 'Business',
-    emoji: '💼',
+    icon: Briefcase,
     renderHTML: (p) => wrap(
       `A message from ${p.brandName}`,
       p.brandColor,
@@ -130,7 +158,7 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
     id: 'campaign',
     name: 'Sales Campaign',
     category: 'Sales',
-    emoji: '🚀',
+    icon: Rocket,
     renderHTML: (p) => wrap(
       `Exclusive opportunity inside — ${p.subject}`,
       '#0f172a',
@@ -148,7 +176,7 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
     id: 'newsletter',
     name: 'Newsletter',
     category: 'Newsletter',
-    emoji: '📰',
+    icon: Newspaper,
     renderHTML: (p) => wrap(
       p.subject,
       '#1e293b',
@@ -166,11 +194,11 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
     id: 'welcome',
     name: 'Welcome Email',
     category: 'Onboarding',
-    emoji: '👋',
+    icon: PartyPopper,
     renderHTML: (p) => wrap(
       `Welcome — we're glad you're here`,
       p.brandColor,
-      `<p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:40px;margin:0 0 12px;">👋</p>
+      `${iconBadge('sparkles', 40)}
        <p style="font-family:Georgia,'Times New Roman',serif;font-size:26px;font-weight:700;color:#ffffff;margin:0 0 8px;">Welcome aboard!</p>
        <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:rgba(255,255,255,0.8);margin:0;">You're in good hands with ${p.brandName}</p>`,
       `${bodyText(p.body)}${cta("Let's Get Started →", p.brandColor)}${signOff(p.brandName)}`,
@@ -184,7 +212,7 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
     id: 'followup',
     name: 'Follow-Up',
     category: 'Follow-Up',
-    emoji: '🔁',
+    icon: Repeat2,
     renderHTML: (p) => wrap(
       `Following up on my previous note`,
       '#334155',
@@ -206,7 +234,7 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
     id: 'partnership',
     name: 'Partnership Proposal',
     category: 'Partnership',
-    emoji: '🤝',
+    icon: Handshake,
     renderHTML: (p) => wrap(
       `A partnership opportunity from ${p.brandName}`,
       '#4f46e5',
@@ -224,11 +252,11 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
     id: 'product-launch',
     name: 'Product Launch',
     category: 'Launch',
-    emoji: '🎯',
+    icon: Target,
     renderHTML: (p) => wrap(
       `Introducing something new from ${p.brandName}`,
       '#be123c',
-      `<p style="display:inline-block;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:11px;font-weight:700;color:#ffffff;letter-spacing:2px;text-transform:uppercase;background:rgba(255,255,255,0.15);padding:6px 16px;border-radius:100px;margin:0 0 16px;">🎯 &nbsp;New Release</p>
+      `<p style="display:inline-block;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:11px;font-weight:700;color:#ffffff;letter-spacing:2px;text-transform:uppercase;background:rgba(255,255,255,0.15);padding:6px 16px;border-radius:100px;margin:0 0 16px;">${iconInline('target', 13)}New Release</p>
        <p style="font-family:Georgia,'Times New Roman',serif;font-size:28px;font-weight:700;color:#ffffff;margin:0 0 8px;line-height:1.2;">${p.subject}</p>
        <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:rgba(255,255,255,0.75);margin:0;">by ${p.brandName}</p>`,
       `${bodyText(p.body)}${cta('See What\'s New →', '#be123c')}${signOff(p.brandName)}`,
@@ -242,7 +270,7 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
     id: 'event',
     name: 'Event Invitation',
     category: 'Events',
-    emoji: '🎪',
+    icon: PartyPopper,
     renderHTML: (p) => wrap(
       `You're invited — ${p.subject}`,
       '#0369a1',
@@ -262,7 +290,7 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
     id: 'cold-outreach',
     name: 'Cold Outreach',
     category: 'Outreach',
-    emoji: '🌊',
+    icon: Waves,
     renderHTML: (p) => wrap(
       `A quick note from ${p.brandName}`,
       '#475569',
@@ -281,11 +309,11 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
     id: 'thankyou',
     name: 'Thank You',
     category: 'Engagement',
-    emoji: '💛',
+    icon: Heart,
     renderHTML: (p) => wrap(
       `A sincere thank you from ${p.brandName}`,
       '#b45309',
-      `<p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:40px;margin:0 0 12px;">💛</p>
+      `${iconBadge('heart', 40, true)}
        <p style="font-family:Georgia,'Times New Roman',serif;font-size:26px;font-weight:700;color:#ffffff;margin:0 0 8px;">Thank You</p>
        <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:rgba(255,255,255,0.75);margin:0;">From the team at ${p.brandName}</p>`,
       `${bodyText(p.body)}${divider()}${signOff(p.brandName)}`,

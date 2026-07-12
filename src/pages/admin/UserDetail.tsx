@@ -13,8 +13,35 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { AlertTriangle, ShieldOff, UserCheck, Trash2, Plus, ArrowLeft, Loader2, Mail, Calendar, Hash } from 'lucide-react';
+import { CountdownTimer } from '@/components/CountdownTimer';
+import { computeExpiry } from '@/lib/duration';
+import type { DurationUnit, RestrictionFieldType } from '@/types/database';
 
-type FieldType = 'text' | 'number' | 'date' | 'file';
+type FieldType = RestrictionFieldType;
+
+function DurationPicker({ unit, setUnit, amount, setAmount }: {
+  unit: DurationUnit; setUnit: (u: DurationUnit) => void; amount: string; setAmount: (a: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label>Duration</Label>
+      <div className="flex gap-2">
+        <Select value={unit} onValueChange={(v: DurationUnit) => setUnit(v)}>
+          <SelectTrigger className="bg-white/5 border-white/10 text-white w-40"><SelectValue /></SelectTrigger>
+          <SelectContent className="bg-slate-900 border-white/10 text-white">
+            <SelectItem value="permanent">Permanent</SelectItem>
+            <SelectItem value="hours">Hours</SelectItem>
+            <SelectItem value="days">Days</SelectItem>
+          </SelectContent>
+        </Select>
+        {unit !== 'permanent' && (
+          <Input type="number" min={1} value={amount} onChange={e => setAmount(e.target.value)}
+            placeholder={unit === 'hours' ? 'e.g. 2' : 'e.g. 3'} className="bg-white/5 border-white/10 text-white" />
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function UserDetail() {
   const { id } = useParams<{ id: string }>();
@@ -32,12 +59,23 @@ export function UserDetail() {
   const [upgradeDialog, setUpgradeDialog] = useState(false);
 
   const [suspendReason, setSuspendReason] = useState('');
+  const [suspendUnit, setSuspendUnit] = useState<DurationUnit>('days');
+  const [suspendAmount, setSuspendAmount] = useState('3');
+  const [suspendTitle, setSuspendTitle] = useState('');
+  const [suspendDesc, setSuspendDesc] = useState('');
+  const [suspendFields, setSuspendFields] = useState<RestrictionField[]>([]);
+
   const [banReason, setBanReason] = useState('');
+  const [banUnit, setBanUnit] = useState<DurationUnit>('permanent');
+  const [banAmount, setBanAmount] = useState('24');
+
   const [emailLimit, setEmailLimit] = useState('');
   const [planName, setPlanName] = useState('');
   const [restrictionTitle, setRestrictionTitle] = useState('');
   const [restrictionDesc, setRestrictionDesc] = useState('');
   const [restrictionFields, setRestrictionFields] = useState<RestrictionField[]>([]);
+  const [restrictionUnit, setRestrictionUnit] = useState<DurationUnit>('days');
+  const [restrictionAmount, setRestrictionAmount] = useState('7');
 
   useEffect(() => {
     const load = async () => {
@@ -65,22 +103,48 @@ export function UserDetail() {
   };
 
   const handleSuspend = async () => {
-    await updateStatus('suspended', { suspend_reason: suspendReason });
-    setSuspendDialog(false); setSuspendReason('');
+    const requirement = suspendTitle
+      ? { title: suspendTitle, description: suspendDesc, fields: suspendFields }
+      : null;
+    await updateStatus('suspended', {
+      suspend_reason: suspendReason,
+      restriction_expires_at: computeExpiry(Number(suspendAmount), suspendUnit),
+      review_request: requirement ? JSON.stringify(requirement) : null,
+      review_status: 'none',
+      review_rejection_note: null,
+    });
+    setSuspendDialog(false); setSuspendReason(''); setSuspendTitle(''); setSuspendDesc(''); setSuspendFields([]);
   };
 
   const handleBan = async () => {
-    await updateStatus('banned', { suspend_reason: banReason });
+    await updateStatus('banned', {
+      suspend_reason: banReason,
+      restriction_expires_at: computeExpiry(Number(banAmount), banUnit),
+      review_request: null,
+      review_status: 'none',
+      review_rejection_note: null,
+    });
     setBanDialog(false); setBanReason('');
   };
 
   const handleUndo = async () => {
-    await updateStatus('active', { suspend_reason: null, review_request: null });
+    await updateStatus('active', {
+      suspend_reason: null,
+      review_request: null,
+      review_status: 'none',
+      review_rejection_note: null,
+      restriction_expires_at: null,
+    });
   };
 
   const handleRestrict = async () => {
     const requirement = { title: restrictionTitle, description: restrictionDesc, fields: restrictionFields };
-    await updateStatus('restricted', { review_request: JSON.stringify(requirement) });
+    await updateStatus('restricted', {
+      review_request: JSON.stringify(requirement),
+      restriction_expires_at: computeExpiry(Number(restrictionAmount), restrictionUnit),
+      review_status: 'none',
+      review_rejection_note: null,
+    });
     setRestrictDialog(false);
   };
 
@@ -108,6 +172,14 @@ export function UserDetail() {
     setRestrictionFields(prev => prev.map((f, idx) => idx === i ? { ...f, ...patch } : f));
   };
   const removeField = (i: number) => setRestrictionFields(prev => prev.filter((_, idx) => idx !== i));
+
+  const addSuspendField = () => {
+    setSuspendFields(prev => [...prev, { id: Date.now().toString(), label: '', type: 'text', required: true }]);
+  };
+  const updateSuspendField = (i: number, patch: Partial<RestrictionField>) => {
+    setSuspendFields(prev => prev.map((f, idx) => idx === i ? { ...f, ...patch } : f));
+  };
+  const removeSuspendField = (i: number) => setSuspendFields(prev => prev.filter((_, idx) => idx !== i));
 
   if (loading) return <div className="space-y-4">{[1, 2, 3].map(i => <Skeleton key={i} className="h-24 bg-white/5 rounded-xl" />)}</div>;
   if (!user) return <div className="text-white/50 text-center py-20">User not found</div>;
@@ -146,6 +218,21 @@ export function UserDetail() {
           </div>
         </div>
       </div>
+
+      {status !== 'active' && (
+        <Card className="bg-white/5 border-white/5">
+          <CardHeader><CardTitle className="text-white text-base">Restriction Status</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <CountdownTimer expiresAt={user.restriction_expires_at} accentClassName="text-white justify-start" />
+            {user.review_status === 'pending' && (
+              <Badge className="bg-blue-500/10 text-blue-300 border-blue-500/30">Awaiting admin review — see Review Requests</Badge>
+            )}
+            {user.review_status === 'rejected' && (
+              <Badge className="bg-red-500/10 text-red-300 border-red-500/30">Last submission rejected — user must resubmit</Badge>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="bg-white/5 border-white/5">
         <CardHeader><CardTitle className="text-white text-base">Account Actions</CardTitle></CardHeader>
@@ -202,11 +289,58 @@ export function UserDetail() {
 
       {/* Suspend dialog */}
       <Dialog open={suspendDialog} onOpenChange={setSuspendDialog}>
-        <DialogContent className="bg-slate-900 border-white/10 text-white">
+        <DialogContent className="bg-slate-900 border-white/10 text-white max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Suspend User</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <Label>Reason for suspension</Label>
-            <Textarea value={suspendReason} onChange={e => setSuspendReason(e.target.value)} className="bg-white/5 border-white/10 text-white" />
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Reason for suspension</Label>
+              <Textarea value={suspendReason} onChange={e => setSuspendReason(e.target.value)} className="bg-white/5 border-white/10 text-white" />
+            </div>
+            <DurationPicker unit={suspendUnit} setUnit={setSuspendUnit} amount={suspendAmount} setAmount={setSuspendAmount} />
+            <div className="space-y-2">
+              <Label>Review Title <span className="text-white/40 font-normal">(optional — lets the user request early review)</span></Label>
+              <Input value={suspendTitle} onChange={e => setSuspendTitle(e.target.value)} placeholder="e.g. Verify your identity" className="bg-white/5 border-white/10 text-white" />
+            </div>
+            {suspendTitle && (
+              <>
+                <div className="space-y-2">
+                  <Label>Description</Label>
+                  <Textarea value={suspendDesc} onChange={e => setSuspendDesc(e.target.value)} className="bg-white/5 border-white/10 text-white resize-none" rows={2} />
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label>Form Fields</Label>
+                    <Button type="button" size="sm" onClick={addSuspendField} className="bg-blue-600/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/30">
+                      <Plus className="w-3 h-3 mr-1" /> Add Field
+                    </Button>
+                  </div>
+                  {suspendFields.map((field, i) => (
+                    <div key={field.id} className="flex gap-2 items-start p-3 bg-white/5 rounded-lg">
+                      <div className="flex-1 grid grid-cols-2 gap-2">
+                        <Input value={field.label} onChange={e => updateSuspendField(i, { label: e.target.value })}
+                          placeholder="Field label" className="bg-white/5 border-white/10 text-white text-sm h-8" />
+                        <Select value={field.type} onValueChange={(v: FieldType) => updateSuspendField(i, { type: v })}>
+                          <SelectTrigger className="bg-white/5 border-white/10 text-white h-8 text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="bg-slate-900 border-white/10 text-white">
+                            <SelectItem value="text">Text</SelectItem>
+                            <SelectItem value="number">Number</SelectItem>
+                            <SelectItem value="date">Date Picker</SelectItem>
+                            <SelectItem value="file">File Upload</SelectItem>
+                            <SelectItem value="image">Picture Picker</SelectItem>
+                            <SelectItem value="camera">Live Camera</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <button onClick={() => removeSuspendField(i)} className="text-red-400 hover:text-red-300 mt-1.5">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setSuspendDialog(false)} className="text-white/60">Cancel</Button>
@@ -221,14 +355,17 @@ export function UserDetail() {
       <Dialog open={banDialog} onOpenChange={setBanDialog}>
         <DialogContent className="bg-slate-900 border-white/10 text-white">
           <DialogHeader><DialogTitle className="text-red-400">Ban User</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <Label>Reason for ban</Label>
-            <Textarea value={banReason} onChange={e => setBanReason(e.target.value)} className="bg-white/5 border-white/10 text-white" />
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Reason for ban</Label>
+              <Textarea value={banReason} onChange={e => setBanReason(e.target.value)} className="bg-white/5 border-white/10 text-white" />
+            </div>
+            <DurationPicker unit={banUnit} setUnit={setBanUnit} amount={banAmount} setAmount={setBanAmount} />
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setBanDialog(false)} className="text-white/60">Cancel</Button>
             <Button onClick={handleBan} disabled={saving} className="bg-red-600 hover:bg-red-700">
-              {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Permanently Ban
+              {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} {banUnit === 'permanent' ? 'Permanently Ban' : 'Ban'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -247,6 +384,7 @@ export function UserDetail() {
               <Label>Description</Label>
               <Textarea value={restrictionDesc} onChange={e => setRestrictionDesc(e.target.value)} className="bg-white/5 border-white/10 text-white resize-none" rows={2} />
             </div>
+            <DurationPicker unit={restrictionUnit} setUnit={setRestrictionUnit} amount={restrictionAmount} setAmount={setRestrictionAmount} />
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <Label>Form Fields</Label>
@@ -268,6 +406,8 @@ export function UserDetail() {
                         <SelectItem value="number">Number</SelectItem>
                         <SelectItem value="date">Date Picker</SelectItem>
                         <SelectItem value="file">File Upload</SelectItem>
+                        <SelectItem value="image">Picture Picker</SelectItem>
+                        <SelectItem value="camera">Live Camera</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

@@ -2,12 +2,13 @@ import { Link, useLocation } from 'wouter';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { LayoutDashboard, Users, Settings, LogOut, ShieldCheck, Activity, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Users, Settings, LogOut, ShieldCheck, Activity, ChevronRight, ClipboardCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const NAV = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/users', label: 'Users', icon: Users },
+  { href: '/admin/review-requests', label: 'Review Requests', icon: ClipboardCheck },
   { href: '/admin/activity', label: 'Activity', icon: Activity },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
 ];

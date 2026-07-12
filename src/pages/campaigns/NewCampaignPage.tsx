@@ -15,7 +15,7 @@ import { RichTextEditor } from './RichTextEditor';
 import { EMAIL_TEMPLATES } from '../email/emailTemplates';
 import { sendEmail, hasUsableEmailProvider } from '@/lib/emailSend';
 import {
-  Wand2, Send, Clock, CheckCircle2, AlertCircle, Loader2,
+  Wand2, Send, Clock, CheckCircle2, XCircle, AlertCircle, Loader2,
   ChevronRight, ChevronLeft, Users, FileText, Eye, Rocket,
   Save, TestTube2, X
 } from 'lucide-react';
@@ -209,6 +209,11 @@ export function NewCampaignPage() {
     const BATCH_SIZE = 5;
     const htmlContent = `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">${body}</div>`;
 
+    // Track results in a local array too — `results` (React state) is captured by
+    // this closure at call time, so reading it after the loop would always see the
+    // stale empty array from before sending started and record sent_count as 0.
+    const localResults: Array<{ email: string; success: boolean; error?: string }> = [];
+
     for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
       if (abortRef.current) break;
       const batch = recipients.slice(i, i + BATCH_SIZE);
@@ -223,6 +228,7 @@ export function NewCampaignPage() {
             subject,
             html: htmlContent,
           });
+          localResults.push({ email, success: result.ok, error: result.error });
           setResults(prev => [...prev, { email, success: result.ok, error: result.error }]);
           await supabase.from('email_sends').insert({
             user_id: user!.id,
@@ -235,6 +241,7 @@ export function NewCampaignPage() {
           });
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'Unknown';
+          localResults.push({ email, success: false, error: msg });
           setResults(prev => [...prev, { email, success: false, error: msg }]);
         }
       }));
@@ -246,7 +253,7 @@ export function NewCampaignPage() {
 
     // Update campaign status
     if (campaign?.id) {
-      const sent = results.filter(r => r.success).length;
+      const sent = localResults.filter(r => r.success).length;
       await supabase.from('campaigns').update({ status: 'sent', sent_count: sent }).eq('id', campaign.id);
     }
 
@@ -414,24 +421,31 @@ export function NewCampaignPage() {
                   <div className="space-y-2">
                     <Label>Email Template <span className="text-muted-foreground font-normal text-xs">(optional — pick one to pre-fill your email)</span></Label>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {EMAIL_TEMPLATES.map(tpl => (
-                        <button
-                          key={tpl.id}
-                          type="button"
-                          onClick={() => applyTemplate(tpl.id)}
-                          className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-left text-sm transition-all ${
-                            selectedTemplateId === tpl.id
-                              ? 'border-primary bg-primary/10 text-primary font-medium ring-1 ring-primary/30'
-                              : 'border-border hover:border-primary/40 hover:bg-muted/60'
-                          }`}
-                        >
-                          <span className="text-base shrink-0">{tpl.emoji}</span>
-                          <div className="min-w-0">
-                            <p className="truncate font-medium text-xs leading-tight">{tpl.name}</p>
-                            <p className="text-xs text-muted-foreground truncate">{tpl.category}</p>
-                          </div>
-                        </button>
-                      ))}
+                      {EMAIL_TEMPLATES.map(tpl => {
+                        const TplIcon = tpl.icon;
+                        return (
+                          <button
+                            key={tpl.id}
+                            type="button"
+                            onClick={() => applyTemplate(tpl.id)}
+                            className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-left text-sm transition-all ${
+                              selectedTemplateId === tpl.id
+                                ? 'border-primary bg-primary/10 text-primary font-medium ring-1 ring-primary/30'
+                                : 'border-border hover:border-primary/40 hover:bg-muted/60'
+                            }`}
+                          >
+                            <span className={`shrink-0 w-7 h-7 rounded-md flex items-center justify-center ${
+                              selectedTemplateId === tpl.id ? 'bg-primary/15' : 'bg-muted'
+                            }`}>
+                              <TplIcon className="w-3.5 h-3.5" />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-xs leading-tight">{tpl.name}</p>
+                              <p className="text-xs text-muted-foreground truncate">{tpl.category}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                     {selectedTemplateId && (
                       <button
@@ -571,8 +585,8 @@ export function NewCampaignPage() {
                       </div>
                       <Progress value={progress} className="h-3" />
                       <div className="flex gap-4 text-sm">
-                        <span className="text-green-600">✓ {results.filter(r => r.success).length} sent</span>
-                        <span className="text-red-500">✗ {results.filter(r => !r.success).length} failed</span>
+                        <span className="text-green-600 flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4" /> {results.filter(r => r.success).length} sent</span>
+                        <span className="text-red-500 flex items-center gap-1.5"><XCircle className="w-4 h-4" /> {results.filter(r => !r.success).length} failed</span>
                       </div>
                       <Button variant="outline" onClick={() => { abortRef.current = true; setSendStatus('idle'); }} className="w-full">
                         Stop Sending

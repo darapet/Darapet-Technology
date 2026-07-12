@@ -32,6 +32,7 @@ import { UserManagement } from '@/pages/admin/UserManagement';
 import { UserDetail } from '@/pages/admin/UserDetail';
 import { AdminSettings } from '@/pages/admin/AdminSettings';
 import { ActivityPage } from '@/pages/admin/ActivityPage';
+import { ReviewRequestsPage } from '@/pages/admin/ReviewRequestsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } },
@@ -82,6 +83,11 @@ function AppRoutes() {
       <Route path="/admin/users/:id">
         <ProtectedRoute adminOnly>
           <AdminLayout><UserDetail /></AdminLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin/review-requests">
+        <ProtectedRoute adminOnly>
+          <AdminLayout><ReviewRequestsPage /></AdminLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/admin/activity">

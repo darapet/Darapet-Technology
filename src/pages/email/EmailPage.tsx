@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Wand2, Send, Clock, CheckCircle2, AlertCircle, Image, Palette } from 'lucide-react';
+import { Loader2, Wand2, Send, Clock, CheckCircle2, XCircle, AlertCircle, Image, Palette } from 'lucide-react';
 import { EMAIL_TEMPLATES } from './emailTemplates';
 import { cn } from '@/lib/utils';
 import { sendEmail, hasUsableEmailProvider, type EmailProviderConfig } from '@/lib/emailSend';
@@ -205,7 +205,9 @@ export function EmailPage() {
                 {EMAIL_TEMPLATES.map(t => (
                   <button key={t.id} onClick={() => setSelectedTemplate(t.id)}
                     className={cn('p-3 rounded-lg border text-left transition-all text-sm', selectedTemplate === t.id ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30')}>
-                    <span className="text-lg">{t.emoji}</span>
+                    <span className={cn('w-7 h-7 rounded-md flex items-center justify-center', selectedTemplate === t.id ? 'bg-primary/15' : 'bg-muted')}>
+                      <t.icon className="w-3.5 h-3.5" />
+                    </span>
                     <p className="font-medium mt-1 text-xs">{t.name}</p>
                     <p className="text-muted-foreground text-xs">{t.category}</p>
                   </button>
@@ -326,8 +328,8 @@ export function EmailPage() {
                   </div>
                   <Progress value={progress} className="h-3" />
                   <div className="flex gap-4 text-sm">
-                    <span className="text-green-600">✓ {results.filter(r => r.success).length} sent</span>
-                    <span className="text-red-500">✗ {results.filter(r => !r.success).length} failed</span>
+                    <span className="text-green-600 flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4" /> {results.filter(r => r.success).length} sent</span>
+                    <span className="text-red-500 flex items-center gap-1.5"><XCircle className="w-4 h-4" /> {results.filter(r => !r.success).length} failed</span>
                   </div>
                   <Button variant="outline" onClick={() => { abortRef.current = true; setSendStatus('idle'); }} className="w-full">
                     Stop Sending
