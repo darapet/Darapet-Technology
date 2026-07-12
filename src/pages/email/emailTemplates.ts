@@ -23,6 +23,8 @@ interface TemplateProps {
   /** Social links from the user's profile — rendered as clickable icons in the footer */
   socialLinks?: SocialLink[];
   websiteUrl?: string;
+  /** URL for the primary CTA button rendered in the template */
+  ctaUrl?: string;
 }
 
 interface EmailTemplate {
@@ -332,7 +334,7 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
            { icon: '🎯', label: 'Targeted',        desc: 'Tailored to your specific needs'    },
            { icon: '🛡️', label: 'Risk-Free',       desc: 'Satisfaction guaranteed'             },
          ], color)}
-         ${cta('Claim Your Offer', color)}`,
+         ${cta('Claim Your Offer', color, p.ctaUrl || '#')}`,
         color, p,
         { headerBg: '#0f172a', outerBg: '#E8EDF5', topBorderColor: color, bodyBg: '#ffffff', footerBg: '#F8FAFC' }
       );
@@ -380,7 +382,7 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
            { icon: '💬', label: 'Support',        desc: 'We\'re here whenever you need us' },
            { icon: '🌟', label: 'Community',      desc: 'Join thousands of happy members'  },
          ], color)}
-         ${cta('Get Started Now', color)}`,
+         ${cta('Get Started Now', color, p.ctaUrl || '#')}`,
         color, p,
         { headerBg: color, outerBg: '#EEF1F8', bodyBg: '#ffffff', footerBg: '#F8FAFC' }
       );
@@ -429,7 +431,7 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
            { icon: '📈', label: 'Growth',          desc: 'Shared goals, shared success'   },
            { icon: '🔒', label: 'Trust',            desc: 'Long-term, transparent working' },
          ], color)}
-         ${cta('Explore the Partnership', color)}`,
+         ${cta('Explore the Partnership', color, p.ctaUrl || '#')}`,
         color, p,
         { headerBg: color, outerBg: '#EEF0F8', bodyBg: '#ffffff', footerBg: '#F8FAFC' }
       );
@@ -451,7 +453,7 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
          ${subline(`Brought to you by ${p.brandName}. Be the first to experience it.`)}`,
         `${bodyText(p.body)}
          ${highlight('This is more than just a launch — it\'s a new chapter. We\'ve put everything into making this exactly right.', color)}
-         ${cta('See What\'s New', color)}`,
+         ${cta('See What\'s New', color, p.ctaUrl || '#')}`,
         color, p,
         {
           headerBg: '#0a0a0a',
@@ -483,7 +485,7 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
            { icon: '📍', label: 'Exclusive Event', desc: 'A curated experience just for you' },
          ], color)}
          ${bodyText(p.body)}
-         ${cta('RSVP Now — Secure Your Spot', color)}
+         ${cta('RSVP Now — Secure Your Spot', color, p.ctaUrl || '#')}
          ${divider()}
          <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;color:#64748b;text-align:center;">Questions? Simply reply to this email — we respond within 24 hours.</p>`,
         color, p,

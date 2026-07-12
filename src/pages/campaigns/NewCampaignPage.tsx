@@ -17,7 +17,7 @@ import { sendEmail, hasUsableEmailProvider } from '@/lib/emailSend';
 import {
   Wand2, Send, Clock, CheckCircle2, XCircle, AlertCircle, Loader2,
   ChevronRight, ChevronLeft, Users, FileText, Eye, Rocket,
-  Save, TestTube2, X, Palette,
+  Save, TestTube2, X, Palette, Link2,
 } from 'lucide-react';
 import type { SocialLink } from '@/pages/email/emailTemplates';
 
@@ -60,6 +60,7 @@ export function NewCampaignPage() {
   const [tplHeaderColor, setTplHeaderColor] = useState<string>('#3B82F6');
   const [tplBgColor, setTplBgColor] = useState<string>('#f1f5f9');
   // Raw body content (just the message body, separate from the full template HTML)
+  const [ctaUrl, setCtaUrl] = useState<string>('');
   const [rawBodyContent, setRawBodyContent] = useState<string>('');
 
   // Step 3 — preview (nothing extra needed)
@@ -305,6 +306,7 @@ export function NewCampaignPage() {
       recipientName: '{{First Name}}',
       socialLinks: profileSocialLinks,
       websiteUrl: (profile as any)?.website_url || '',
+      ctaUrl: ctaUrl || (profile as any)?.website_url || '#',
     });
     setBody(html);
     if (!subject) setSubject(tpl.name);
