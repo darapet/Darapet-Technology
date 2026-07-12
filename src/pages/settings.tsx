@@ -21,8 +21,9 @@ import type { SocialLink } from '@/pages/email/emailTemplates';
 
 async function getCloudinaryConfig(): Promise<{ cloud: string; preset: string }> {
   const { data } = await supabase.from('settings').select('cloudinary_cloud_name, cloudinary_upload_preset').eq('id', 1).single();
-  const cloud = data?.cloudinary_cloud_name || '';
-  const preset = data?.cloudinary_upload_preset || '';
+  // Trim any accidental whitespace that may have been copy-pasted into the admin form
+  const cloud = (data?.cloudinary_cloud_name || '').trim();
+  const preset = (data?.cloudinary_upload_preset || '').trim();
   if (!cloud || !preset) throw new Error('Cloudinary is not configured. Ask your admin to add the Cloud Name and Upload Preset in Admin → Settings.');
   return { cloud, preset };
 }
@@ -353,14 +354,18 @@ export function SettingsPage() {
         try {
           logo_url = await uploadToCloudinary(logoFile, `darapet/${user.id}`);
         } catch (err) {
-          toast({ variant: 'destructive', title: 'Logo upload failed', description: err instanceof Error ? err.message : 'Check your Cloudinary settings.' });
+          toast({ variant: 'destructive', title: 'Logo upload failed', description: err instanceof Error ? err.message : 'Check your Cloudinary settings.', duration: 12000 });
+          setSaving(false);
+          return;
         }
       }
       if (sigFile) {
         try {
           signature_url = await uploadToCloudinary(sigFile, `darapet/${user.id}`);
         } catch (err) {
-          toast({ variant: 'destructive', title: 'Signature upload failed', description: err instanceof Error ? err.message : 'Check your Cloudinary settings.' });
+          toast({ variant: 'destructive', title: 'Signature upload failed', description: err instanceof Error ? err.message : 'Check your Cloudinary settings.', duration: 12000 });
+          setSaving(false);
+          return;
         }
       }
 
@@ -396,7 +401,7 @@ export function SettingsPage() {
       toast({ title: 'Settings saved', description: 'Your profile has been updated.' });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to save settings';
-      toast({ variant: 'destructive', title: 'Error', description: msg });
+      toast({ variant: 'destructive', title: 'Error saving settings', description: msg, duration: 12000 });
     } finally {
       setSaving(false);
     }
