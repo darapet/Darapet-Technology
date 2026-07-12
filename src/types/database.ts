@@ -26,6 +26,7 @@ export type Database = {
           mailgun_api_key: string | null;
           mailgun_domain: string | null;
           sendgrid_api_key: string | null;
+          groq_api_key: string | null;
           smtp_host: string | null;
           smtp_port: number | null;
           smtp_user: string | null;
@@ -57,6 +58,7 @@ export type Database = {
           mailgun_api_key?: string | null;
           mailgun_domain?: string | null;
           sendgrid_api_key?: string | null;
+          groq_api_key?: string | null;
           smtp_host?: string | null;
           smtp_port?: number | null;
           smtp_user?: string | null;
@@ -87,6 +89,7 @@ export type Database = {
           mailgun_api_key?: string | null;
           mailgun_domain?: string | null;
           sendgrid_api_key?: string | null;
+          groq_api_key?: string | null;
           smtp_host?: string | null;
           smtp_port?: number | null;
           smtp_user?: string | null;

@@ -23,6 +23,7 @@ export function SettingsPage() {
     name: '', company: '', phone: '', description: '',
     email_daily_limit: '', brand_color: '#3B82F6',
     brevo_api_key: '', sendgrid_api_key: '', mailgun_api_key: '', mailgun_domain: '',
+    groq_api_key: '',
     smtp_host: '', smtp_port: '', smtp_user: '', smtp_pass: '', smtp_secure: false,
     active_smtp: 'brevo',
   });
@@ -41,6 +42,7 @@ export function SettingsPage() {
       sendgrid_api_key: profile.sendgrid_api_key || '',
       mailgun_api_key: profile.mailgun_api_key || '',
       mailgun_domain: profile.mailgun_domain || '',
+      groq_api_key: profile.groq_api_key || '',
       smtp_host: profile.smtp_host || '',
       smtp_port: profile.smtp_port?.toString() || '',
       smtp_user: profile.smtp_user || '',
@@ -106,6 +108,7 @@ export function SettingsPage() {
         sendgrid_api_key: form.sendgrid_api_key,
         mailgun_api_key: form.mailgun_api_key,
         mailgun_domain: form.mailgun_domain,
+        groq_api_key: form.groq_api_key,
         smtp_host: form.smtp_host,
         smtp_port: form.smtp_port ? Number(form.smtp_port) : null,
         smtp_user: form.smtp_user,
@@ -189,21 +192,21 @@ export function SettingsPage() {
               {form.active_smtp === 'brevo' && (
                 <div className="space-y-2">
                   <Label>Brevo API Key</Label>
-                  <Input type="password" value={form.brevo_api_key} onChange={e => set('brevo_api_key', e.target.value)} placeholder="xkeysib-..." className="bg-muted/50" />
+                  <Input type="password" autoComplete="new-password" value={form.brevo_api_key} onChange={e => set('brevo_api_key', e.target.value)} placeholder="xkeysib-..." className="bg-muted/50" />
                   <p className="text-xs text-muted-foreground">From brevo.com → Settings → API Keys</p>
                 </div>
               )}
               {form.active_smtp === 'sendgrid' && (
                 <div className="space-y-2">
                   <Label>SendGrid API Key</Label>
-                  <Input type="password" value={form.sendgrid_api_key} onChange={e => set('sendgrid_api_key', e.target.value)} placeholder="SG...." className="bg-muted/50" />
+                  <Input type="password" autoComplete="new-password" value={form.sendgrid_api_key} onChange={e => set('sendgrid_api_key', e.target.value)} placeholder="SG...." className="bg-muted/50" />
                 </div>
               )}
               {form.active_smtp === 'mailgun' && (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label>Mailgun API Key</Label>
-                    <Input type="password" value={form.mailgun_api_key} onChange={e => set('mailgun_api_key', e.target.value)} className="bg-muted/50" />
+                    <Input type="password" autoComplete="new-password" value={form.mailgun_api_key} onChange={e => set('mailgun_api_key', e.target.value)} className="bg-muted/50" />
                   </div>
                   <div className="space-y-2">
                     <Label>Domain</Label>
@@ -223,11 +226,11 @@ export function SettingsPage() {
                   </div>
                   <div className="space-y-2">
                     <Label>Username</Label>
-                    <Input value={form.smtp_user} onChange={e => set('smtp_user', e.target.value)} className="bg-muted/50" />
+                    <Input autoComplete="off" value={form.smtp_user} onChange={e => set('smtp_user', e.target.value)} className="bg-muted/50" />
                   </div>
                   <div className="space-y-2 col-span-2">
                     <Label>Password</Label>
-                    <Input type="password" value={form.smtp_pass} onChange={e => set('smtp_pass', e.target.value)} className="bg-muted/50" />
+                    <Input type="password" autoComplete="new-password" value={form.smtp_pass} onChange={e => set('smtp_pass', e.target.value)} className="bg-muted/50" />
                   </div>
                 </div>
               )}
@@ -247,8 +250,8 @@ export function SettingsPage() {
             <CardContent>
               <div className="space-y-2">
                 <Label>Groq API Key</Label>
-                <Input type="password" value={''} placeholder="gsk_... (set in admin settings or add your own)" className="bg-muted/50" disabled />
-                <p className="text-xs text-muted-foreground">Contact your admin to enable AI writing, or add your Groq key in the admin API settings.</p>
+                <Input type="password" autoComplete="new-password" value={form.groq_api_key} onChange={e => set('groq_api_key', e.target.value)} placeholder="gsk_... (or leave blank to use the admin default)" className="bg-muted/50" />
+                <p className="text-xs text-muted-foreground">From console.groq.com. If left blank, the admin's default key (if any) is used.</p>
               </div>
             </CardContent>
           </Card>

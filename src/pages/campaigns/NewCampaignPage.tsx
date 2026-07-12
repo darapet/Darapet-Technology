@@ -72,7 +72,7 @@ export function NewCampaignPage() {
   }, []);
 
   const generateWithAI = async () => {
-    const key = groqKey || profile?.brevo_api_key;
+    const key = profile?.groq_api_key || groqKey;
     if (!key) { toast({ variant: 'destructive', title: 'No Groq API key', description: 'Add your Groq key in Admin Settings.' }); return; }
     if (!aiPrompt.trim()) { toast({ variant: 'destructive', title: 'Enter a prompt' }); return; }
     setAiLoading(true);

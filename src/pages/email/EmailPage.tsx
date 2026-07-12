@@ -52,15 +52,15 @@ export function EmailPage() {
   }, [user, batchIdParam]);
 
   useEffect(() => {
-    // Load user's Groq key from profile or admin settings
-    if (profile?.brevo_api_key) return;
+    // Fall back to the admin's default Groq key when the user hasn't set their own
+    if (profile?.groq_api_key) return;
     supabase.from('settings').select('groq_api_key').eq('id', 1).single().then(({ data }) => {
       if (data?.groq_api_key) setGroqKey(data.groq_api_key);
     });
   }, [profile]);
 
   const generateWithAI = async () => {
-    const key = profile?.brevo_api_key || groqKey;
+    const key = profile?.groq_api_key || groqKey;
     if (!key) { toast({ variant: 'destructive', title: 'No Groq API key', description: 'Add your Groq API key in Settings.' }); return; }
     if (!aiPrompt) { toast({ variant: 'destructive', title: 'Enter a prompt', description: 'Tell the AI what to write.' }); return; }
     setAiLoading(true);
