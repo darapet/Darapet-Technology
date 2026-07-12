@@ -27,6 +27,8 @@ jobs:
         run: yarn build
         env:
           BASE_PATH: /Darapet-Technology/
+          VITE_SUPABASE_URL: https://lvmvimijhlxsnnmrjvie.supabase.co
+          VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2bXZpbWlqaGx4c25ubXJqdmllIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1MDI4MDQsImV4cCI6MjA5OTA3ODgwNH0.GHZGJP5evc_K2csEaYJwdBlI0blQdV5XsS50W9EGMNM
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
