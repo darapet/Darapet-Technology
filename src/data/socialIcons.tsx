@@ -59,7 +59,7 @@ import {
   SiFiverr,
   SiUpwork,
   SiTrustpilot,
-  SiAngellist,
+  SiWellfound,
   SiRumble,
   SiClubhouse,
   SiBereal,
@@ -100,7 +100,7 @@ export const SOCIAL_ICON_MAP: Record<string, IconComponent> = {
 
   // Professional
   linkedin:    FaLinkedin,
-  angellist:   SiAngellist,
+  angellist:   SiWellfound,
   producthunt: SiProducthunt,
   quora:       FaQuora,
 
