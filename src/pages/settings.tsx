@@ -7,9 +7,17 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Upload, User, Mail, Key, Pen, Globe, Eye, EyeOff, ChevronDown, ChevronRight, CheckCircle2, AlertCircle } from 'lucide-react';
+import {
+  Loader2, Upload, User, Mail, Key, Pen, Globe, Eye, EyeOff,
+  ChevronDown, ChevronRight, CheckCircle2, AlertCircle, Plus, X, Search,
+} from 'lucide-react';
 import { detectSmtpPreset, type SmtpPreset } from '@/lib/emailSend';
+import { SOCIAL_PLATFORMS, SOCIAL_CATEGORIES } from '@/data/socialMedia';
+import type { SocialLink } from '@/pages/email/emailTemplates';
+
+// ─── Cloudinary ───────────────────────────────────────────────────────────────
 
 async function getCloudinaryConfig(): Promise<{ cloud: string; preset: string }> {
   const { data } = await supabase.from('settings').select('cloudinary_cloud_name, cloudinary_upload_preset').eq('id', 1).single();
@@ -30,15 +38,11 @@ async function uploadToCloudinary(file: File, folder: string): Promise<string> {
     body: form,
   });
   if (!res.ok) {
-    // Parse Cloudinary's JSON error body so we show the real reason
-    // (e.g. "Upload preset must be whitelisted for unsigned uploads" / "Upload preset not found")
     let reason = res.statusText;
     try {
       const errBody = await res.json();
       reason = errBody?.error?.message ?? reason;
-    } catch {
-      // ignore parse errors — fall back to statusText
-    }
+    } catch { /* ignore */ }
     if (res.status === 401 || res.status === 400) {
       throw new Error(
         `Cloudinary upload failed: ${reason}. ` +
@@ -50,6 +54,8 @@ async function uploadToCloudinary(file: File, folder: string): Promise<string> {
   const data = await res.json();
   return data.secure_url as string;
 }
+
+// ─── Secret input ─────────────────────────────────────────────────────────────
 
 type SecretField = 'brevo_api_key' | 'sendgrid_api_key' | 'mailgun_api_key' | 'smtp_pass' | 'groq_api_key';
 
@@ -70,6 +76,189 @@ function SecretInput({ visible, onToggle, ...props }: ComponentProps<typeof Inpu
   );
 }
 
+// ─── Social Links Manager ─────────────────────────────────────────────────────
+
+function SocialLinksManager({
+  links,
+  websiteUrl,
+  onLinksChange,
+  onWebsiteChange,
+}: {
+  links: SocialLink[];
+  websiteUrl: string;
+  onLinksChange: (links: SocialLink[]) => void;
+  onWebsiteChange: (url: string) => void;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const addLink = (platformId: string) => {
+    if (links.find(l => l.platform === platformId)) return;
+    onLinksChange([...links, { platform: platformId, url: '' }]);
+    setPickerOpen(false);
+    setSearch('');
+  };
+
+  const removeLink = (platformId: string) => {
+    onLinksChange(links.filter(l => l.platform !== platformId));
+  };
+
+  const updateUrl = (platformId: string, url: string) => {
+    onLinksChange(links.map(l => l.platform === platformId ? { ...l, url } : l));
+  };
+
+  const alreadyAdded = new Set(links.map(l => l.platform));
+
+  const filteredCategories = SOCIAL_CATEGORIES.map(cat => ({
+    ...cat,
+    platforms: SOCIAL_PLATFORMS.filter(
+      p =>
+        p.category === cat.id &&
+        !alreadyAdded.has(p.id) &&
+        (search === '' || p.name.toLowerCase().includes(search.toLowerCase()))
+    ),
+  })).filter(cat => cat.platforms.length > 0);
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Globe className="w-4 h-4" /> Social Links
+          </CardTitle>
+          <CardDescription>
+            Links added here appear as clickable brand icons at the bottom of every email you send
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Website — always visible */}
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2 text-sm font-medium">
+              <span className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-base shrink-0">🌐</span>
+              Website URL
+            </Label>
+            <Input
+              value={websiteUrl}
+              onChange={e => onWebsiteChange(e.target.value)}
+              placeholder="https://yourwebsite.com"
+              className="bg-muted/50"
+            />
+          </div>
+
+          {/* Added platforms */}
+          {links.length > 0 && (
+            <div className="space-y-2.5">
+              <div className="h-px bg-border" />
+              {links.map(link => {
+                const platform = SOCIAL_PLATFORMS.find(p => p.id === link.platform);
+                if (!platform) return null;
+                return (
+                  <div key={link.platform} className="flex items-center gap-3">
+                    {/* Platform badge */}
+                    <div
+                      className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-base shadow-sm"
+                      style={{ backgroundColor: platform.color + '18', border: `1px solid ${platform.color}30` }}
+                    >
+                      {platform.icon}
+                    </div>
+                    {/* URL input */}
+                    <div className="flex-1 min-w-0">
+                      <Input
+                        value={link.url}
+                        onChange={e => updateUrl(link.platform, e.target.value)}
+                        placeholder={`https://${platform.domain}/your-profile`}
+                        className="bg-muted/50 text-sm"
+                      />
+                    </div>
+                    {/* Remove */}
+                    <button
+                      type="button"
+                      onClick={() => removeLink(link.platform)}
+                      aria-label={`Remove ${platform.name}`}
+                      className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Add button */}
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="w-full flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border px-4 py-3 text-sm text-muted-foreground hover:border-primary/50 hover:text-primary hover:bg-primary/5 transition-all font-medium"
+          >
+            <Plus className="w-4 h-4" />
+            Add Social Platform
+          </button>
+        </CardContent>
+      </Card>
+
+      {/* Platform picker dialog */}
+      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
+        <DialogContent className="max-w-sm max-h-[80vh] overflow-hidden flex flex-col p-0">
+          <DialogHeader className="p-5 pb-0 shrink-0">
+            <DialogTitle className="text-base">Add Social Platform</DialogTitle>
+          </DialogHeader>
+
+          {/* Search */}
+          <div className="px-5 pt-3 shrink-0">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search platforms..."
+                className="pl-8 bg-muted/50 text-sm h-9"
+                autoFocus
+              />
+            </div>
+          </div>
+
+          {/* Platform grid */}
+          <div className="overflow-y-auto flex-1 px-5 pb-5 pt-3 space-y-4">
+            {filteredCategories.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-8">No platforms match your search.</p>
+            )}
+            {filteredCategories.map(cat => (
+              <div key={cat.id}>
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">
+                  {cat.label}
+                </p>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {cat.platforms.map(p => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => addLink(p.id)}
+                      className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border hover:border-primary/50 hover:bg-primary/5 transition-all text-center group"
+                    >
+                      <span
+                        className="w-9 h-9 rounded-xl flex items-center justify-center text-xl shadow-sm transition-transform group-hover:scale-110"
+                        style={{ backgroundColor: p.color + '15', border: `1px solid ${p.color}25` }}
+                      >
+                        {p.icon}
+                      </span>
+                      <span className="text-[10px] font-medium leading-tight text-muted-foreground group-hover:text-foreground line-clamp-2">
+                        {p.name}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// ─── Main Settings Page ───────────────────────────────────────────────────────
+
 export function SettingsPage() {
   const { user, profile, refreshProfile } = useAuth();
   const { toast } = useToast();
@@ -84,6 +273,10 @@ export function SettingsPage() {
   const toggleVisible = (field: SecretField) => setVisibleKeys(prev => ({ ...prev, [field]: !prev[field] }));
   const [smtpAdvancedOpen, setSmtpAdvancedOpen] = useState(false);
   const [smtpAdvancedTouched, setSmtpAdvancedTouched] = useState(false);
+
+  // Social links state
+  const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
+  const [websiteUrl, setWebsiteUrl] = useState('');
 
   const [form, setForm] = useState({
     name: '', company: '', phone: '', description: '',
@@ -119,14 +312,14 @@ export function SettingsPage() {
     }));
     if (profile.logo_url) setLogoPreview(profile.logo_url);
     if (profile.signature_url) setSigPreview(profile.signature_url);
+    // Load social links
+    const raw = profile.social_links;
+    if (Array.isArray(raw)) setSocialLinks(raw as SocialLink[]);
+    if (profile.website_url) setWebsiteUrl(profile.website_url);
   }, [profile]);
 
   const set = (key: string, value: string | boolean) => setForm(prev => ({ ...prev, [key]: value }));
 
-  // Auto-fill SMTP server settings from the user's email domain (Gmail,
-  // Yahoo, Outlook, iCloud, AOL, Zoho, GMX) so people don't have to look up
-  // host/port themselves. Skipped once they've opened "Advanced" and edited
-  // settings manually, so we don't clobber a custom/business mail server.
   useEffect(() => {
     if (form.active_smtp !== 'smtp' || smtpAdvancedTouched) return;
     const preset = detectSmtpPreset(form.smtp_user);
@@ -193,6 +386,8 @@ export function SettingsPage() {
         smtp_pass: form.smtp_pass,
         smtp_secure: form.smtp_secure,
         active_smtp: form.active_smtp,
+        social_links: socialLinks,
+        website_url: websiteUrl || null,
         updated_at: new Date().toISOString(),
       });
 
@@ -221,6 +416,7 @@ export function SettingsPage() {
           <TabsTrigger value="brand"><Pen className="w-3 h-3 mr-1" />Brand</TabsTrigger>
         </TabsList>
 
+        {/* ── PROFILE TAB ── */}
         <TabsContent value="profile" className="space-y-4 mt-4">
           <Card>
             <CardHeader><CardTitle className="text-base">Personal Information</CardTitle></CardHeader>
@@ -250,6 +446,7 @@ export function SettingsPage() {
           </Card>
         </TabsContent>
 
+        {/* ── EMAIL TAB ── */}
         <TabsContent value="email" className="space-y-4 mt-4">
           <Card>
             <CardHeader>
@@ -257,7 +454,6 @@ export function SettingsPage() {
               <CardDescription>Your API keys are used for sending email campaigns. Stored securely in your profile.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
-              {/* Provider selector */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {['brevo', 'sendgrid', 'mailgun', 'smtp'].map(p => (
                   <button key={p} onClick={() => {
@@ -307,12 +503,10 @@ export function SettingsPage() {
                     Send free through your own mailbox — Gmail, Yahoo, Outlook, iCloud, AOL, Zoho, and GMX are recognized automatically
                     from your email address, no domain purchase required. Just enter your email and an app password below.
                   </p>
-
                   <div className="space-y-2">
                     <Label>Your Email Address</Label>
                     <Input autoComplete="off" value={form.smtp_user} onChange={e => set('smtp_user', e.target.value)} placeholder="you@gmail.com" className="bg-muted/50" />
                   </div>
-
                   {form.smtp_user.includes('@') && (
                     smtpPreset ? (
                       <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 rounded-lg border border-emerald-200 dark:border-emerald-800/30 text-xs text-emerald-700 dark:text-emerald-300 space-y-1">
@@ -325,11 +519,10 @@ export function SettingsPage() {
                     ) : (
                       <div className="p-3 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800/30 text-xs text-amber-700 dark:text-amber-300 space-y-1">
                         <p className="font-medium flex items-center gap-1.5"><AlertCircle className="w-3.5 h-3.5" /> We don't recognize this email domain automatically.</p>
-                        <p>Open "Advanced server settings" below and enter your provider's SMTP host, port, and password manually — check your email provider's help pages for these details.</p>
+                        <p>Open "Advanced server settings" below and enter your provider's SMTP host, port, and password manually.</p>
                       </div>
                     )
                   )}
-
                   <div className="space-y-2">
                     <Label>{smtpPreset?.passwordLabel || 'Password'}</Label>
                     <SecretInput autoComplete="new-password" value={form.smtp_pass} onChange={e => set('smtp_pass', e.target.value)}
@@ -337,13 +530,11 @@ export function SettingsPage() {
                       visible={visibleKeys.smtp_pass} onToggle={() => toggleVisible('smtp_pass')} />
                     <p className="text-xs text-muted-foreground">Free accounts are typically capped around 500 emails/day.</p>
                   </div>
-
                   <button type="button" onClick={() => { setSmtpAdvancedOpen(v => !v); setSmtpAdvancedTouched(true); }}
                     className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                     {smtpAdvancedOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                     Advanced server settings {smtpPreset && !smtpAdvancedOpen ? '(auto-filled)' : ''}
                   </button>
-
                   {smtpAdvancedOpen && (
                     <div className="grid grid-cols-2 gap-3 pl-1">
                       <div className="space-y-2 col-span-2">
@@ -365,7 +556,6 @@ export function SettingsPage() {
                   )}
                 </div>
               )}
-
               <div className="space-y-2">
                 <Label>Daily Email Limit (0 = use admin default)</Label>
                 <Input type="number" value={form.email_daily_limit} onChange={e => set('email_daily_limit', e.target.value)} placeholder="50" className="bg-muted/50 w-40" />
@@ -389,7 +579,9 @@ export function SettingsPage() {
           </Card>
         </TabsContent>
 
+        {/* ── BRAND TAB ── */}
         <TabsContent value="brand" className="space-y-4 mt-4">
+          {/* Logo & Signature uploads */}
           <Card>
             <CardHeader><CardTitle className="text-base">Brand Assets</CardTitle></CardHeader>
             <CardContent className="space-y-5">
@@ -403,7 +595,6 @@ export function SettingsPage() {
                   </div>
                   <input id="logoInput" type="file" accept="image/*" className="hidden" onChange={e => handleFileChange(e, 'logo')} />
                 </div>
-
                 {/* Signature */}
                 <div className="space-y-3">
                   <Label>Email Signature Image</Label>
@@ -412,19 +603,28 @@ export function SettingsPage() {
                     <span className="text-xs text-muted-foreground">Click to upload signature</span>
                   </div>
                   <input id="sigInput" type="file" accept="image/*" className="hidden" onChange={e => handleFileChange(e, 'sig')} />
-                  <p className="text-xs text-muted-foreground">For best results, use a transparent PNG of your handwritten or designed signature.</p>
+                  <p className="text-xs text-muted-foreground">For best results, use a transparent PNG.</p>
                 </div>
               </div>
 
+              {/* Brand colour */}
               <div className="space-y-2">
                 <Label>Brand Colour</Label>
                 <div className="flex items-center gap-3">
                   <input type="color" value={form.brand_color} onChange={e => set('brand_color', e.target.value)} className="w-12 h-10 rounded-lg cursor-pointer border border-border" />
-                  <span className="text-sm text-muted-foreground">Used in email templates and outreach headers</span>
+                  <span className="text-sm text-muted-foreground">Used as the default email header colour and in outreach templates</span>
                 </div>
               </div>
             </CardContent>
           </Card>
+
+          {/* Social Links */}
+          <SocialLinksManager
+            links={socialLinks}
+            websiteUrl={websiteUrl}
+            onLinksChange={setSocialLinks}
+            onWebsiteChange={setWebsiteUrl}
+          />
         </TabsContent>
       </Tabs>
 

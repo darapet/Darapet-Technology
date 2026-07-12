@@ -36,6 +36,8 @@ export type Database = {
           emails_sent_today: number | null;
           last_send_reset: string | null;
           wa_session_dir: string | null;
+          social_links: Json | null;
+          website_url: string | null;
           created_at: string | null;
           updated_at: string | null;
         };
@@ -68,6 +70,8 @@ export type Database = {
           emails_sent_today?: number | null;
           last_send_reset?: string | null;
           wa_session_dir?: string | null;
+          social_links?: Json | null;
+          website_url?: string | null;
           updated_at?: string | null;
         };
         Update: {
@@ -99,6 +103,8 @@ export type Database = {
           emails_sent_today?: number | null;
           last_send_reset?: string | null;
           wa_session_dir?: string | null;
+          social_links?: Json | null;
+          website_url?: string | null;
           updated_at?: string | null;
         };
         Relationships: NoRelationships;

@@ -17,8 +17,9 @@ import { sendEmail, hasUsableEmailProvider } from '@/lib/emailSend';
 import {
   Wand2, Send, Clock, CheckCircle2, XCircle, AlertCircle, Loader2,
   ChevronRight, ChevronLeft, Users, FileText, Eye, Rocket,
-  Save, TestTube2, X
+  Save, TestTube2, X, Palette,
 } from 'lucide-react';
+import type { SocialLink } from '@/pages/email/emailTemplates';
 
 interface SendResult { email: string; success: boolean; error?: string; }
 
@@ -55,6 +56,9 @@ export function NewCampaignPage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [groqKey, setGroqKey] = useState('');
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  // Per-campaign template colour overrides (not saved to DB)
+  const [tplHeaderColor, setTplHeaderColor] = useState<string>('#3B82F6');
+  const [tplBgColor, setTplBgColor] = useState<string>('#f1f5f9');
 
   // Step 3 — preview (nothing extra needed)
 
@@ -73,6 +77,11 @@ export function NewCampaignPage() {
       if (data?.groq_api_key) setGroqKey(data.groq_api_key);
     });
   }, []);
+
+  // Sync header colour default from profile brand colour when profile loads
+  useEffect(() => {
+    if (profile?.brand_color) setTplHeaderColor(profile.brand_color);
+  }, [profile?.brand_color]);
 
   const generateWithAI = async () => {
     const key = profile?.groq_api_key || groqKey;
@@ -260,18 +269,25 @@ export function NewCampaignPage() {
     setSendStatus('done');
   };
 
-  const applyTemplate = (templateId: string) => {
+  const applyTemplate = (templateId: string, headerColor?: string, bgColor?: string) => {
     const tpl = EMAIL_TEMPLATES.find(t => t.id === templateId);
     if (!tpl) return;
     setSelectedTemplateId(templateId);
+    const profileSocialLinks = Array.isArray((profile as any)?.social_links)
+      ? ((profile as any).social_links as SocialLink[])
+      : [];
     const html = tpl.renderHTML({
       brandName: profile?.company || profile?.name || 'Your Brand',
       logoUrl: (profile as any)?.logo_url || '',
-      brandColor: (profile as any)?.brand_color || '#3B82F6',
+      brandColor: headerColor ?? tplHeaderColor,
+      headerBgOverride: headerColor ?? tplHeaderColor,
+      emailBgColor: bgColor ?? tplBgColor,
       subject: subject || tpl.name,
       body: 'Hi there,\n\nI wanted to reach out personally...',
       signatureUrl: (profile as any)?.signature_url || null,
       recipientName: '{{First Name}}',
+      socialLinks: profileSocialLinks,
+      websiteUrl: (profile as any)?.website_url || '',
     });
     setBody(html);
     if (!subject) setSubject(tpl.name);
@@ -456,6 +472,64 @@ export function NewCampaignPage() {
                         Clear template
                       </button>
                     )}
+                  </div>
+
+                  {/* ── Template colour customisation ── */}
+                  <div className="p-4 bg-muted/30 rounded-xl border border-border/60 space-y-3">
+                    <p className="text-xs font-semibold flex items-center gap-2 text-foreground/80">
+                      <Palette className="w-3.5 h-3.5" />
+                      Template Colours
+                      {!selectedTemplateId && <span className="font-normal text-muted-foreground">(pick a template above first to preview)</span>}
+                    </p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-muted-foreground">Header colour</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={tplHeaderColor}
+                            onChange={e => {
+                              setTplHeaderColor(e.target.value);
+                              if (selectedTemplateId) applyTemplate(selectedTemplateId, e.target.value, tplBgColor);
+                            }}
+                            className="w-9 h-8 rounded-md cursor-pointer border border-border bg-transparent"
+                          />
+                          <span className="text-[11px] text-muted-foreground font-mono">{tplHeaderColor}</span>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-muted-foreground">Background colour</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={tplBgColor}
+                            onChange={e => {
+                              setTplBgColor(e.target.value);
+                              if (selectedTemplateId) applyTemplate(selectedTemplateId, tplHeaderColor, e.target.value);
+                            }}
+                            className="w-9 h-8 rounded-md cursor-pointer border border-border bg-transparent"
+                          />
+                          <span className="text-[11px] text-muted-foreground font-mono">{tplBgColor}</span>
+                        </div>
+                      </div>
+                    </div>
+                    {/* Social links status */}
+                    {(() => {
+                      const links = Array.isArray((profile as any)?.social_links) ? (profile as any).social_links : [];
+                      const website = (profile as any)?.website_url;
+                      const count = links.length + (website ? 1 : 0);
+                      if (count === 0) return (
+                        <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                          💡 Add social links in <strong>Settings → Brand</strong> to include them in the footer
+                        </p>
+                      );
+                      return (
+                        <p className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3 h-3" />
+                          {count} social link{count !== 1 ? 's' : ''} will appear in the email footer
+                        </p>
+                      );
+                    })()}
                   </div>
 
                   <div className="space-y-2">
