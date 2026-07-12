@@ -81,7 +81,7 @@ export function NewCampaignPage() {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'llama3-8b-8192',
+          model: 'llama-3.1-8b-instant',
           messages: [
             { role: 'system', content: 'You are an expert email copywriter. Write professional, engaging outreach emails. Output only the email body as plain HTML paragraphs (use <p>, <strong>, <em> tags). No subject line, no placeholders like [Name].' },
             { role: 'user', content: `Write a cold outreach email for: ${aiPrompt}\nBrand: ${profile?.name || 'the sender'}\nCompany: ${profile?.company || 'our business'}` }

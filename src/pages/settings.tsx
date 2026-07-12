@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ComponentProps } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,26 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Upload, User, Mail, Key, Pen, Globe } from 'lucide-react';
+import { Loader2, Upload, User, Mail, Key, Pen, Globe, Eye, EyeOff } from 'lucide-react';
+
+type SecretField = 'brevo_api_key' | 'sendgrid_api_key' | 'mailgun_api_key' | 'smtp_pass' | 'groq_api_key';
+
+function SecretInput({ visible, onToggle, ...props }: ComponentProps<typeof Input> & { visible: boolean; onToggle: () => void }) {
+  return (
+    <div className="relative">
+      <Input {...props} type={visible ? 'text' : 'password'} className={`${props.className || ''} pr-10`} />
+      <button
+        type="button"
+        tabIndex={-1}
+        onClick={onToggle}
+        aria-label={visible ? 'Hide key' : 'Show key'}
+        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+      >
+        {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+      </button>
+    </div>
+  );
+}
 
 export function SettingsPage() {
   const { user, profile, refreshProfile } = useAuth();
@@ -18,6 +37,10 @@ export function SettingsPage() {
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [sigPreview, setSigPreview] = useState('');
   const [logoPreview, setLogoPreview] = useState('');
+  const [visibleKeys, setVisibleKeys] = useState<Record<SecretField, boolean>>({
+    brevo_api_key: false, sendgrid_api_key: false, mailgun_api_key: false, smtp_pass: false, groq_api_key: false,
+  });
+  const toggleVisible = (field: SecretField) => setVisibleKeys(prev => ({ ...prev, [field]: !prev[field] }));
 
   const [form, setForm] = useState({
     name: '', company: '', phone: '', description: '',
@@ -192,21 +215,24 @@ export function SettingsPage() {
               {form.active_smtp === 'brevo' && (
                 <div className="space-y-2">
                   <Label>Brevo API Key</Label>
-                  <Input type="password" autoComplete="new-password" value={form.brevo_api_key} onChange={e => set('brevo_api_key', e.target.value)} placeholder="xkeysib-..." className="bg-muted/50" />
+                  <SecretInput autoComplete="new-password" value={form.brevo_api_key} onChange={e => set('brevo_api_key', e.target.value)} placeholder="xkeysib-..." className="bg-muted/50"
+                    visible={visibleKeys.brevo_api_key} onToggle={() => toggleVisible('brevo_api_key')} />
                   <p className="text-xs text-muted-foreground">From brevo.com → Settings → API Keys</p>
                 </div>
               )}
               {form.active_smtp === 'sendgrid' && (
                 <div className="space-y-2">
                   <Label>SendGrid API Key</Label>
-                  <Input type="password" autoComplete="new-password" value={form.sendgrid_api_key} onChange={e => set('sendgrid_api_key', e.target.value)} placeholder="SG...." className="bg-muted/50" />
+                  <SecretInput autoComplete="new-password" value={form.sendgrid_api_key} onChange={e => set('sendgrid_api_key', e.target.value)} placeholder="SG...." className="bg-muted/50"
+                    visible={visibleKeys.sendgrid_api_key} onToggle={() => toggleVisible('sendgrid_api_key')} />
                 </div>
               )}
               {form.active_smtp === 'mailgun' && (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
                     <Label>Mailgun API Key</Label>
-                    <Input type="password" autoComplete="new-password" value={form.mailgun_api_key} onChange={e => set('mailgun_api_key', e.target.value)} className="bg-muted/50" />
+                    <SecretInput autoComplete="new-password" value={form.mailgun_api_key} onChange={e => set('mailgun_api_key', e.target.value)} className="bg-muted/50"
+                      visible={visibleKeys.mailgun_api_key} onToggle={() => toggleVisible('mailgun_api_key')} />
                   </div>
                   <div className="space-y-2">
                     <Label>Domain</Label>
@@ -230,7 +256,8 @@ export function SettingsPage() {
                   </div>
                   <div className="space-y-2 col-span-2">
                     <Label>Password</Label>
-                    <Input type="password" autoComplete="new-password" value={form.smtp_pass} onChange={e => set('smtp_pass', e.target.value)} className="bg-muted/50" />
+                    <SecretInput autoComplete="new-password" value={form.smtp_pass} onChange={e => set('smtp_pass', e.target.value)} className="bg-muted/50"
+                      visible={visibleKeys.smtp_pass} onToggle={() => toggleVisible('smtp_pass')} />
                   </div>
                 </div>
               )}
@@ -250,7 +277,8 @@ export function SettingsPage() {
             <CardContent>
               <div className="space-y-2">
                 <Label>Groq API Key</Label>
-                <Input type="password" autoComplete="new-password" value={form.groq_api_key} onChange={e => set('groq_api_key', e.target.value)} placeholder="gsk_... (or leave blank to use the admin default)" className="bg-muted/50" />
+                <SecretInput autoComplete="new-password" value={form.groq_api_key} onChange={e => set('groq_api_key', e.target.value)} placeholder="gsk_... (or leave blank to use the admin default)" className="bg-muted/50"
+                  visible={visibleKeys.groq_api_key} onToggle={() => toggleVisible('groq_api_key')} />
                 <p className="text-xs text-muted-foreground">From console.groq.com. If left blank, the admin's default key (if any) is used.</p>
               </div>
             </CardContent>
