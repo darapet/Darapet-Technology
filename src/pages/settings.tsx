@@ -44,7 +44,6 @@ export function SettingsPage() {
   const toggleVisible = (field: SecretField) => setVisibleKeys(prev => ({ ...prev, [field]: !prev[field] }));
   const [smtpAdvancedOpen, setSmtpAdvancedOpen] = useState(false);
   const [smtpAdvancedTouched, setSmtpAdvancedTouched] = useState(false);
-  const smtpPreset: SmtpPreset | null = detectSmtpPreset(form.smtp_user);
 
   const [form, setForm] = useState({
     name: '', company: '', phone: '', description: '',
@@ -54,6 +53,7 @@ export function SettingsPage() {
     smtp_host: '', smtp_port: '', smtp_user: '', smtp_pass: '', smtp_secure: false,
     active_smtp: 'brevo',
   });
+  const smtpPreset: SmtpPreset | null = detectSmtpPreset(form.smtp_user);
 
   useEffect(() => {
     if (!profile) return;

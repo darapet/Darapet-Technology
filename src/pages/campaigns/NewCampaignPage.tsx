@@ -12,6 +12,7 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { RichTextEditor } from './RichTextEditor';
+import { EMAIL_TEMPLATES } from '../email/emailTemplates';
 import { sendEmail, hasUsableEmailProvider } from '@/lib/emailSend';
 import {
   Wand2, Send, Clock, CheckCircle2, AlertCircle, Loader2,
@@ -53,6 +54,7 @@ export function NewCampaignPage() {
   const [aiOpen, setAiOpen] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [groqKey, setGroqKey] = useState('');
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
 
   // Step 3 — preview (nothing extra needed)
 
@@ -251,6 +253,23 @@ export function NewCampaignPage() {
     setSendStatus('done');
   };
 
+  const applyTemplate = (templateId: string) => {
+    const tpl = EMAIL_TEMPLATES.find(t => t.id === templateId);
+    if (!tpl) return;
+    setSelectedTemplateId(templateId);
+    const html = tpl.renderHTML({
+      brandName: profile?.company || profile?.name || 'Your Brand',
+      logoUrl: (profile as any)?.logo_url || '',
+      brandColor: (profile as any)?.brand_color || '#3B82F6',
+      subject: subject || tpl.name,
+      body: body || 'Hi there,\n\nI wanted to reach out personally...',
+      signatureUrl: (profile as any)?.signature_url || null,
+      recipientName: '{{First Name}}',
+    });
+    setBody(html);
+    if (!subject) setSubject(tpl.name);
+  };
+
   const canProceed = () => {
     if (step === 1) return recipients.length >= 1 && recipients.length <= 100;
     if (step === 2) return subject.trim().length > 0 && body.trim().length > 0;
@@ -391,6 +410,40 @@ export function NewCampaignPage() {
                     )}
                   </AnimatePresence>
 
+                  {/* Template Picker */}
+                  <div className="space-y-2">
+                    <Label>Email Template <span className="text-muted-foreground font-normal text-xs">(optional — pick one to pre-fill your email)</span></Label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {EMAIL_TEMPLATES.map(tpl => (
+                        <button
+                          key={tpl.id}
+                          type="button"
+                          onClick={() => applyTemplate(tpl.id)}
+                          className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-left text-sm transition-all ${
+                            selectedTemplateId === tpl.id
+                              ? 'border-primary bg-primary/10 text-primary font-medium ring-1 ring-primary/30'
+                              : 'border-border hover:border-primary/40 hover:bg-muted/60'
+                          }`}
+                        >
+                          <span className="text-base shrink-0">{tpl.emoji}</span>
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-xs leading-tight">{tpl.name}</p>
+                            <p className="text-xs text-muted-foreground truncate">{tpl.category}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    {selectedTemplateId && (
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedTemplateId(null); setBody(''); }}
+                        className="text-xs text-muted-foreground hover:text-foreground underline"
+                      >
+                        Clear template
+                      </button>
+                    )}
+                  </div>
+
                   <div className="space-y-2">
                     <Label>Subject Line</Label>
                     <Input
@@ -406,7 +459,7 @@ export function NewCampaignPage() {
                     <RichTextEditor
                       value={body}
                       onChange={setBody}
-                      placeholder="Write your email here, or click AI Generate above..."
+                      placeholder="Write your email here, or use a template or AI Generate above..."
                     />
                   </div>
                 </CardContent>
