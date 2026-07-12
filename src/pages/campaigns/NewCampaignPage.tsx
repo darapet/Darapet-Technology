@@ -59,6 +59,8 @@ export function NewCampaignPage() {
   // Per-campaign template colour overrides (not saved to DB)
   const [tplHeaderColor, setTplHeaderColor] = useState<string>('#3B82F6');
   const [tplBgColor, setTplBgColor] = useState<string>('#f1f5f9');
+  // Raw body content (just the message body, separate from the full template HTML)
+  const [rawBodyContent, setRawBodyContent] = useState<string>('');
 
   // Step 3 — preview (nothing extra needed)
 
@@ -105,9 +107,16 @@ export function NewCampaignPage() {
       const data = await res.json();
       const generated = data.choices?.[0]?.message?.content;
       if (generated) {
-        setBody(generated);
+        setRawBodyContent(generated);
+        if (selectedTemplateId) {
+          // Inject the AI content straight into the selected template wrapper
+          applyTemplate(selectedTemplateId, generated, tplHeaderColor, tplBgColor);
+          toast({ title: '✨ AI content applied to template!', description: 'The generated email is inside your chosen template. Review and edit before sending.' });
+        } else {
+          setBody(generated);
+          toast({ title: 'AI email generated!', description: 'Pick a template above to wrap it, or send as-is.' });
+        }
         setAiOpen(false);
-        toast({ title: 'AI email generated!', description: 'Review and edit before sending.' });
       }
     } catch {
       toast({ variant: 'destructive', title: 'AI Error', description: 'Failed to generate. Check your Groq API key.' });
@@ -269,10 +278,18 @@ export function NewCampaignPage() {
     setSendStatus('done');
   };
 
-  const applyTemplate = (templateId: string, headerColor?: string, bgColor?: string) => {
+  /**
+   * Render a template into the full body HTML.
+   * bodyContent — the email message text/HTML to inject; falls back to
+   *   rawBodyContent (from a previous AI generation or manual edit), then
+   *   to a default placeholder if neither exists.
+   */
+  const applyTemplate = (templateId: string, bodyContent?: string, headerColor?: string, bgColor?: string) => {
     const tpl = EMAIL_TEMPLATES.find(t => t.id === templateId);
     if (!tpl) return;
     setSelectedTemplateId(templateId);
+    const content = bodyContent ?? (rawBodyContent || 'Hi there,\n\nI wanted to reach out personally...');
+    if (bodyContent) setRawBodyContent(bodyContent);
     const profileSocialLinks = Array.isArray((profile as any)?.social_links)
       ? ((profile as any).social_links as SocialLink[])
       : [];
@@ -283,7 +300,7 @@ export function NewCampaignPage() {
       headerBgOverride: headerColor ?? tplHeaderColor,
       emailBgColor: bgColor ?? tplBgColor,
       subject: subject || tpl.name,
-      body: 'Hi there,\n\nI wanted to reach out personally...',
+      body: content,
       signatureUrl: (profile as any)?.signature_url || null,
       recipientName: '{{First Name}}',
       socialLinks: profileSocialLinks,
@@ -490,7 +507,7 @@ export function NewCampaignPage() {
                             value={tplHeaderColor}
                             onChange={e => {
                               setTplHeaderColor(e.target.value);
-                              if (selectedTemplateId) applyTemplate(selectedTemplateId, e.target.value, tplBgColor);
+                              if (selectedTemplateId) applyTemplate(selectedTemplateId, undefined, e.target.value, tplBgColor);
                             }}
                             className="w-9 h-8 rounded-md cursor-pointer border border-border bg-transparent"
                           />
@@ -505,7 +522,7 @@ export function NewCampaignPage() {
                             value={tplBgColor}
                             onChange={e => {
                               setTplBgColor(e.target.value);
-                              if (selectedTemplateId) applyTemplate(selectedTemplateId, tplHeaderColor, e.target.value);
+                              if (selectedTemplateId) applyTemplate(selectedTemplateId, undefined, tplHeaderColor, e.target.value);
                             }}
                             className="w-9 h-8 rounded-md cursor-pointer border border-border bg-transparent"
                           />
