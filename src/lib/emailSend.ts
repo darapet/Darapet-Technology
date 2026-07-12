@@ -28,6 +28,77 @@ export interface SendEmailResult {
   error?: string;
 }
 
+export interface SmtpPreset {
+  label: string;
+  host: string;
+  port: number;
+  secure: boolean;
+  passwordLabel: string;
+  passwordHint: string;
+  passwordUrl?: string;
+}
+
+// Known SMTP servers for common consumer/business email providers, keyed by
+// the domain after the "@" in the user's email address. Lets users just
+// enter their email + an app password instead of hunting down server
+// settings themselves.
+export const SMTP_PRESETS: Record<string, SmtpPreset> = {
+  'gmail.com': {
+    label: 'Gmail',
+    host: 'smtp.gmail.com', port: 465, secure: true,
+    passwordLabel: 'App Password',
+    passwordHint: 'Not your normal Gmail password — generate a 16-character App Password (requires 2-Step Verification on your Google account).',
+    passwordUrl: 'https://myaccount.google.com/apppasswords',
+  },
+  'googlemail.com': { label: 'Gmail', host: 'smtp.gmail.com', port: 465, secure: true, passwordLabel: 'App Password', passwordHint: 'Generate a 16-character App Password (requires 2-Step Verification).', passwordUrl: 'https://myaccount.google.com/apppasswords' },
+  'yahoo.com': {
+    label: 'Yahoo Mail',
+    host: 'smtp.mail.yahoo.com', port: 465, secure: true,
+    passwordLabel: 'App Password',
+    passwordHint: 'Not your normal Yahoo password — generate an App Password in Yahoo Account Security.',
+    passwordUrl: 'https://login.yahoo.com/account/security',
+  },
+  'outlook.com': {
+    label: 'Outlook',
+    host: 'smtp-mail.outlook.com', port: 587, secure: false,
+    passwordLabel: 'Password / App Password',
+    passwordHint: 'Your normal password works if 2-Step Verification is off. If it\u2019s on, create an App Password instead.',
+    passwordUrl: 'https://account.live.com/proofs/AppPassword',
+  },
+  'hotmail.com': { label: 'Outlook', host: 'smtp-mail.outlook.com', port: 587, secure: false, passwordLabel: 'Password / App Password', passwordHint: 'Your normal password works if 2-Step Verification is off; otherwise create an App Password.', passwordUrl: 'https://account.live.com/proofs/AppPassword' },
+  'live.com': { label: 'Outlook', host: 'smtp-mail.outlook.com', port: 587, secure: false, passwordLabel: 'Password / App Password', passwordHint: 'Your normal password works if 2-Step Verification is off; otherwise create an App Password.', passwordUrl: 'https://account.live.com/proofs/AppPassword' },
+  'msn.com': { label: 'Outlook', host: 'smtp-mail.outlook.com', port: 587, secure: false, passwordLabel: 'Password / App Password', passwordHint: 'Your normal password works if 2-Step Verification is off; otherwise create an App Password.', passwordUrl: 'https://account.live.com/proofs/AppPassword' },
+  'icloud.com': {
+    label: 'iCloud Mail',
+    host: 'smtp.mail.me.com', port: 587, secure: false,
+    passwordLabel: 'App-Specific Password',
+    passwordHint: 'Not your Apple ID password — generate an app-specific password at appleid.apple.com.',
+    passwordUrl: 'https://appleid.apple.com/account/manage',
+  },
+  'me.com': { label: 'iCloud Mail', host: 'smtp.mail.me.com', port: 587, secure: false, passwordLabel: 'App-Specific Password', passwordHint: 'Generate an app-specific password at appleid.apple.com.', passwordUrl: 'https://appleid.apple.com/account/manage' },
+  'mac.com': { label: 'iCloud Mail', host: 'smtp.mail.me.com', port: 587, secure: false, passwordLabel: 'App-Specific Password', passwordHint: 'Generate an app-specific password at appleid.apple.com.', passwordUrl: 'https://appleid.apple.com/account/manage' },
+  'aol.com': {
+    label: 'AOL Mail',
+    host: 'smtp.aol.com', port: 465, secure: true,
+    passwordLabel: 'App Password',
+    passwordHint: 'Generate an App Password in AOL Account Security settings.',
+    passwordUrl: 'https://login.aol.com/account/security',
+  },
+  'zoho.com': {
+    label: 'Zoho Mail',
+    host: 'smtp.zoho.com', port: 465, secure: true,
+    passwordLabel: 'App Password',
+    passwordHint: 'Generate an App Password under Zoho Account Security if two-factor auth is enabled; otherwise use your normal password.',
+  },
+  'gmx.com': { label: 'GMX Mail', host: 'mail.gmx.com', port: 465, secure: true, passwordLabel: 'Password', passwordHint: 'Use your normal GMX password.' },
+};
+
+export function detectSmtpPreset(email: string): SmtpPreset | null {
+  const domain = email.split('@')[1]?.trim().toLowerCase();
+  if (!domain) return null;
+  return SMTP_PRESETS[domain] || null;
+}
+
 export function hasUsableEmailProvider(config: EmailProviderConfig): boolean {
   if (config.active_smtp === 'smtp') {
     return Boolean(config.smtp_host && config.smtp_user && config.smtp_pass);

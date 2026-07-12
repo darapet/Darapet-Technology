@@ -8,7 +8,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Upload, User, Mail, Key, Pen, Globe, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Upload, User, Mail, Key, Pen, Globe, Eye, EyeOff, ChevronDown, ChevronRight, CheckCircle2, AlertCircle } from 'lucide-react';
+import { detectSmtpPreset, type SmtpPreset } from '@/lib/emailSend';
 
 type SecretField = 'brevo_api_key' | 'sendgrid_api_key' | 'mailgun_api_key' | 'smtp_pass' | 'groq_api_key';
 
@@ -41,6 +42,9 @@ export function SettingsPage() {
     brevo_api_key: false, sendgrid_api_key: false, mailgun_api_key: false, smtp_pass: false, groq_api_key: false,
   });
   const toggleVisible = (field: SecretField) => setVisibleKeys(prev => ({ ...prev, [field]: !prev[field] }));
+  const [smtpAdvancedOpen, setSmtpAdvancedOpen] = useState(false);
+  const [smtpAdvancedTouched, setSmtpAdvancedTouched] = useState(false);
+  const smtpPreset: SmtpPreset | null = detectSmtpPreset(form.smtp_user);
 
   const [form, setForm] = useState({
     name: '', company: '', phone: '', description: '',
@@ -78,6 +82,19 @@ export function SettingsPage() {
   }, [profile]);
 
   const set = (key: string, value: string | boolean) => setForm(prev => ({ ...prev, [key]: value }));
+
+  // Auto-fill SMTP server settings from the user's email domain (Gmail,
+  // Yahoo, Outlook, iCloud, AOL, Zoho, GMX) so people don't have to look up
+  // host/port themselves. Skipped once they've opened "Advanced" and edited
+  // settings manually, so we don't clobber a custom/business mail server.
+  useEffect(() => {
+    if (form.active_smtp !== 'smtp' || smtpAdvancedTouched) return;
+    const preset = detectSmtpPreset(form.smtp_user);
+    if (preset) {
+      setForm(prev => ({ ...prev, smtp_host: preset.host, smtp_port: String(preset.port), smtp_secure: preset.secure }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.smtp_user, form.active_smtp, smtpAdvancedTouched]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'sig' | 'logo') => {
     const file = e.target.files?.[0];
@@ -213,7 +230,7 @@ export function SettingsPage() {
                     }
                   }}
                     className={`p-3 rounded-lg border text-sm font-medium capitalize transition-all ${form.active_smtp === p ? 'border-primary bg-primary/5 text-primary' : 'border-border hover:border-primary/30'}`}>
-                    {p === 'brevo' ? '📧 Brevo' : p === 'sendgrid' ? '📨 SendGrid' : p === 'mailgun' ? '📬 Mailgun' : '🔧 SMTP (Gmail)'}
+                    {p === 'brevo' ? '📧 Brevo' : p === 'sendgrid' ? '📨 SendGrid' : p === 'mailgun' ? '📬 Mailgun' : '🔧 My Email (SMTP)'}
                   </button>
                 ))}
               </div>
@@ -248,32 +265,66 @@ export function SettingsPage() {
               )}
               {form.active_smtp === 'smtp' && (
                 <div className="space-y-3">
-                  <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800/30 text-xs text-blue-700 dark:text-blue-300 space-y-1">
-                    <p className="font-medium">Using Gmail? No domain needed — this sends through your own mailbox.</p>
-                    <p>Host: <code>smtp.gmail.com</code>, Port: <code>465</code>. Username is your full Gmail address.</p>
-                    <p>Password must be a 16-character <strong>App Password</strong> (not your normal Gmail password) — generate one at
-                      {' '}<a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="underline">myaccount.google.com/apppasswords</a> (requires 2-Step Verification enabled on your Google account).</p>
-                    <p>Free Gmail accounts are capped at ~500 emails/day.</p>
+                  <p className="text-xs text-muted-foreground">
+                    Send free through your own mailbox — Gmail, Yahoo, Outlook, iCloud, AOL, Zoho, and GMX are recognized automatically
+                    from your email address, no domain purchase required. Just enter your email and an app password below.
+                  </p>
+
+                  <div className="space-y-2">
+                    <Label>Your Email Address</Label>
+                    <Input autoComplete="off" value={form.smtp_user} onChange={e => set('smtp_user', e.target.value)} placeholder="you@gmail.com" className="bg-muted/50" />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2 col-span-2">
-                      <Label>SMTP Host</Label>
-                      <Input value={form.smtp_host} onChange={e => set('smtp_host', e.target.value)} placeholder="smtp.gmail.com" className="bg-muted/50" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Port</Label>
-                      <Input type="number" value={form.smtp_port} onChange={e => set('smtp_port', e.target.value)} placeholder="465" className="bg-muted/50" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Username</Label>
-                      <Input autoComplete="off" value={form.smtp_user} onChange={e => set('smtp_user', e.target.value)} placeholder="you@gmail.com" className="bg-muted/50" />
-                    </div>
-                    <div className="space-y-2 col-span-2">
-                      <Label>App Password</Label>
-                      <SecretInput autoComplete="new-password" value={form.smtp_pass} onChange={e => set('smtp_pass', e.target.value)} placeholder="16-character app password" className="bg-muted/50"
-                        visible={visibleKeys.smtp_pass} onToggle={() => toggleVisible('smtp_pass')} />
-                    </div>
+
+                  {form.smtp_user.includes('@') && (
+                    smtpPreset ? (
+                      <div className="p-3 bg-emerald-50 dark:bg-emerald-950/20 rounded-lg border border-emerald-200 dark:border-emerald-800/30 text-xs text-emerald-700 dark:text-emerald-300 space-y-1">
+                        <p className="font-medium flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" /> Detected {smtpPreset.label} — server settings filled in automatically.</p>
+                        <p>{smtpPreset.passwordHint}</p>
+                        {smtpPreset.passwordUrl && (
+                          <p><a href={smtpPreset.passwordUrl} target="_blank" rel="noreferrer" className="underline font-medium">Get your {smtpPreset.passwordLabel.toLowerCase()} →</a></p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800/30 text-xs text-amber-700 dark:text-amber-300 space-y-1">
+                        <p className="font-medium flex items-center gap-1.5"><AlertCircle className="w-3.5 h-3.5" /> We don't recognize this email domain automatically.</p>
+                        <p>Open "Advanced server settings" below and enter your provider's SMTP host, port, and password manually — check your email provider's help pages for these details.</p>
+                      </div>
+                    )
+                  )}
+
+                  <div className="space-y-2">
+                    <Label>{smtpPreset?.passwordLabel || 'Password'}</Label>
+                    <SecretInput autoComplete="new-password" value={form.smtp_pass} onChange={e => set('smtp_pass', e.target.value)}
+                      placeholder={smtpPreset ? smtpPreset.passwordLabel : 'Your mailbox password or app password'} className="bg-muted/50"
+                      visible={visibleKeys.smtp_pass} onToggle={() => toggleVisible('smtp_pass')} />
+                    <p className="text-xs text-muted-foreground">Free accounts are typically capped around 500 emails/day.</p>
                   </div>
+
+                  <button type="button" onClick={() => { setSmtpAdvancedOpen(v => !v); setSmtpAdvancedTouched(true); }}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                    {smtpAdvancedOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                    Advanced server settings {smtpPreset && !smtpAdvancedOpen ? '(auto-filled)' : ''}
+                  </button>
+
+                  {smtpAdvancedOpen && (
+                    <div className="grid grid-cols-2 gap-3 pl-1">
+                      <div className="space-y-2 col-span-2">
+                        <Label>SMTP Host</Label>
+                        <Input value={form.smtp_host} onChange={e => set('smtp_host', e.target.value)} placeholder="smtp.example.com" className="bg-muted/50" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Port</Label>
+                        <Input type="number" value={form.smtp_port} onChange={e => set('smtp_port', e.target.value)} placeholder="465" className="bg-muted/50" />
+                      </div>
+                      <div className="space-y-2 flex flex-col justify-end">
+                        <Label className="mb-2">Connection</Label>
+                        <label className="flex items-center gap-2 text-sm h-10">
+                          <input type="checkbox" checked={form.smtp_secure} onChange={e => set('smtp_secure', e.target.checked)} className="w-4 h-4" />
+                          Use SSL/TLS (port 465)
+                        </label>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
