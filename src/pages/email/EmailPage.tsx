@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, Wand2, Send, Clock, CheckCircle2, AlertCircle, Image, Palette } from 'lucide-react';
 import { EMAIL_TEMPLATES } from './emailTemplates';
 import { cn } from '@/lib/utils';
+import { sendEmail, hasUsableEmailProvider, type EmailProviderConfig } from '@/lib/emailSend';
 
 type SendStatus = 'idle' | 'sending' | 'done';
 
@@ -93,12 +94,13 @@ export function EmailPage() {
     if (leads.length === 0) { toast({ variant: 'destructive', title: 'No leads', description: 'No email leads found in this batch.' }); return; }
 
     // Get user's email provider settings
-    const { data: appUser } = await supabase.from('app_users').select('brevo_api_key, daily_email_limit').eq('auth_user_id', user!.id).single();
-    const { data: prof } = await supabase.from('profiles').select('brevo_api_key, sendgrid_api_key, mailgun_api_key, email_daily_limit, emails_sent_today').eq('id', user!.id).single();
+    const { data: prof } = await supabase.from('profiles')
+      .select('brevo_api_key, active_smtp, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure, email_daily_limit, emails_sent_today')
+      .eq('id', user!.id).single();
 
-    const brevoKey = appUser?.brevo_api_key || prof?.brevo_api_key;
-    if (!brevoKey) {
-      toast({ variant: 'destructive', title: 'No email API key', description: 'Add your Brevo API key in Settings to send emails.' });
+    const providerConfig: EmailProviderConfig | null = prof;
+    if (!providerConfig || !hasUsableEmailProvider(providerConfig)) {
+      toast({ variant: 'destructive', title: 'No email provider configured', description: 'Add your Brevo API key or SMTP details in Settings to send emails.' });
       return;
     }
 
@@ -110,7 +112,7 @@ export function EmailPage() {
         type: 'email',
         subject,
         body,
-        provider: 'brevo',
+        provider: providerConfig.active_smtp === 'smtp' ? 'smtp' : 'brevo',
         status: 'scheduled',
         scheduled_at: new Date(scheduledAt).toISOString(),
       });
@@ -144,18 +146,15 @@ export function EmailPage() {
         });
 
         try {
-          const res = await fetch('https://api.brevo.com/v3/smtp/email', {
-            method: 'POST',
-            headers: { 'api-key': brevoKey, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              sender: { name: profile?.name || profile?.company || 'Darapet', email: profile?.email || user!.email! },
-              to: [{ email: lead.email, name: lead.social_name || '' }],
-              subject,
-              htmlContent: html,
-            }),
+          const result = await sendEmail({
+            config: providerConfig,
+            fromName: profile?.name || profile?.company || 'Darapet',
+            fromEmail: profile?.email || user!.email!,
+            to: lead.email!,
+            subject,
+            html,
           });
-          const ok = res.ok;
-          setResults(prev => [...prev, { email: lead.email!, success: ok }]);
+          setResults(prev => [...prev, { email: lead.email!, success: result.ok, error: result.error }]);
           // Log to email_sends
           await supabase.from('email_sends').insert({
             user_id: user!.id,
@@ -163,8 +162,8 @@ export function EmailPage() {
             to_email: lead.email!,
             subject,
             template_id: selectedTemplate,
-            provider: 'brevo',
-            status: ok ? 'sent' : 'failed',
+            provider: providerConfig.active_smtp === 'smtp' ? 'smtp' : 'brevo',
+            status: result.ok ? 'sent' : 'failed',
             sent_at: new Date().toISOString(),
           });
         } catch (err: unknown) {

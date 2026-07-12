@@ -205,9 +205,15 @@ export function SettingsPage() {
               {/* Provider selector */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {['brevo', 'sendgrid', 'mailgun', 'smtp'].map(p => (
-                  <button key={p} onClick={() => set('active_smtp', p)}
+                  <button key={p} onClick={() => {
+                    set('active_smtp', p);
+                    if (p === 'smtp' && !form.smtp_port) {
+                      set('smtp_port', '465');
+                      set('smtp_secure', true);
+                    }
+                  }}
                     className={`p-3 rounded-lg border text-sm font-medium capitalize transition-all ${form.active_smtp === p ? 'border-primary bg-primary/5 text-primary' : 'border-border hover:border-primary/30'}`}>
-                    {p === 'brevo' ? '📧 Brevo' : p === 'sendgrid' ? '📨 SendGrid' : p === 'mailgun' ? '📬 Mailgun' : '🔧 SMTP'}
+                    {p === 'brevo' ? '📧 Brevo' : p === 'sendgrid' ? '📨 SendGrid' : p === 'mailgun' ? '📬 Mailgun' : '🔧 SMTP (Gmail)'}
                   </button>
                 ))}
               </div>
@@ -241,23 +247,32 @@ export function SettingsPage() {
                 </div>
               )}
               {form.active_smtp === 'smtp' && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2 col-span-2">
-                    <Label>SMTP Host</Label>
-                    <Input value={form.smtp_host} onChange={e => set('smtp_host', e.target.value)} placeholder="smtp.gmail.com" className="bg-muted/50" />
+                <div className="space-y-3">
+                  <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800/30 text-xs text-blue-700 dark:text-blue-300 space-y-1">
+                    <p className="font-medium">Using Gmail? No domain needed — this sends through your own mailbox.</p>
+                    <p>Host: <code>smtp.gmail.com</code>, Port: <code>465</code>. Username is your full Gmail address.</p>
+                    <p>Password must be a 16-character <strong>App Password</strong> (not your normal Gmail password) — generate one at
+                      {' '}<a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="underline">myaccount.google.com/apppasswords</a> (requires 2-Step Verification enabled on your Google account).</p>
+                    <p>Free Gmail accounts are capped at ~500 emails/day.</p>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Port</Label>
-                    <Input type="number" value={form.smtp_port} onChange={e => set('smtp_port', e.target.value)} placeholder="587" className="bg-muted/50" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Username</Label>
-                    <Input autoComplete="off" value={form.smtp_user} onChange={e => set('smtp_user', e.target.value)} className="bg-muted/50" />
-                  </div>
-                  <div className="space-y-2 col-span-2">
-                    <Label>Password</Label>
-                    <SecretInput autoComplete="new-password" value={form.smtp_pass} onChange={e => set('smtp_pass', e.target.value)} className="bg-muted/50"
-                      visible={visibleKeys.smtp_pass} onToggle={() => toggleVisible('smtp_pass')} />
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2 col-span-2">
+                      <Label>SMTP Host</Label>
+                      <Input value={form.smtp_host} onChange={e => set('smtp_host', e.target.value)} placeholder="smtp.gmail.com" className="bg-muted/50" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Port</Label>
+                      <Input type="number" value={form.smtp_port} onChange={e => set('smtp_port', e.target.value)} placeholder="465" className="bg-muted/50" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Username</Label>
+                      <Input autoComplete="off" value={form.smtp_user} onChange={e => set('smtp_user', e.target.value)} placeholder="you@gmail.com" className="bg-muted/50" />
+                    </div>
+                    <div className="space-y-2 col-span-2">
+                      <Label>App Password</Label>
+                      <SecretInput autoComplete="new-password" value={form.smtp_pass} onChange={e => set('smtp_pass', e.target.value)} placeholder="16-character app password" className="bg-muted/50"
+                        visible={visibleKeys.smtp_pass} onToggle={() => toggleVisible('smtp_pass')} />
+                    </div>
                   </div>
                 </div>
               )}

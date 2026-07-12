@@ -12,6 +12,7 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { RichTextEditor } from './RichTextEditor';
+import { sendEmail, hasUsableEmailProvider } from '@/lib/emailSend';
 import {
   Wand2, Send, Clock, CheckCircle2, AlertCircle, Loader2,
   ChevronRight, ChevronLeft, Users, FileText, Eye, Rocket,
@@ -126,23 +127,25 @@ export function NewCampaignPage() {
 
   const sendTestEmail = async () => {
     if (!subject || !body) { toast({ variant: 'destructive', title: 'Add subject & body first' }); return; }
-    const { data: prof } = await supabase.from('profiles').select('brevo_api_key').eq('id', user!.id).single();
-    const brevoKey = prof?.brevo_api_key;
-    if (!brevoKey) { toast({ variant: 'destructive', title: 'No Brevo API key', description: 'Add it in Settings.' }); return; }
+    const { data: prof } = await supabase.from('profiles')
+      .select('brevo_api_key, active_smtp, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure')
+      .eq('id', user!.id).single();
+    if (!prof || !hasUsableEmailProvider(prof)) {
+      toast({ variant: 'destructive', title: 'No email provider configured', description: 'Add it in Settings.' });
+      return;
+    }
     setSendingTest(true);
     try {
-      const res = await fetch('https://api.brevo.com/v3/smtp/email', {
-        method: 'POST',
-        headers: { 'api-key': brevoKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sender: { name: profile?.name || 'Darapet', email: profile?.email || user!.email! },
-          to: [{ email: user!.email!, name: profile?.name || 'You' }],
-          subject: `[TEST] ${subject}`,
-          htmlContent: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">${body}</div>`,
-        }),
+      const result = await sendEmail({
+        config: prof,
+        fromName: profile?.name || 'Darapet',
+        fromEmail: profile?.email || user!.email!,
+        to: user!.email!,
+        subject: `[TEST] ${subject}`,
+        html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">${body}</div>`,
       });
-      if (res.ok) toast({ title: 'Test sent!', description: `Check ${user!.email}` });
-      else toast({ variant: 'destructive', title: 'Test failed', description: 'Check your Brevo API key.' });
+      if (result.ok) toast({ title: 'Test sent!', description: `Check ${user!.email}` });
+      else toast({ variant: 'destructive', title: 'Test failed', description: result.error || 'Check your email provider settings.' });
     } catch {
       toast({ variant: 'destructive', title: 'Test send error' });
     } finally {
@@ -154,9 +157,13 @@ export function NewCampaignPage() {
     if (!subject || !body) { toast({ variant: 'destructive', title: 'Missing subject or body' }); return; }
     if (recipients.length < 1) { toast({ variant: 'destructive', title: 'No valid recipients' }); return; }
 
-    const { data: prof } = await supabase.from('profiles').select('brevo_api_key').eq('id', user!.id).single();
-    const brevoKey = prof?.brevo_api_key;
-    if (!brevoKey) { toast({ variant: 'destructive', title: 'No Brevo API key', description: 'Add it in Settings.' }); return; }
+    const { data: prof } = await supabase.from('profiles')
+      .select('brevo_api_key, active_smtp, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure')
+      .eq('id', user!.id).single();
+    if (!prof || !hasUsableEmailProvider(prof)) {
+      toast({ variant: 'destructive', title: 'No email provider configured', description: 'Add it in Settings.' });
+      return;
+    }
 
     if (scheduleMode && scheduledAt) {
       await supabase.from('scheduled_sends').insert({
@@ -206,25 +213,22 @@ export function NewCampaignPage() {
 
       await Promise.allSettled(batch.map(async (email) => {
         try {
-          const res = await fetch('https://api.brevo.com/v3/smtp/email', {
-            method: 'POST',
-            headers: { 'api-key': brevoKey, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              sender: { name: profile?.name || 'Darapet', email: profile?.email || user!.email! },
-              to: [{ email }],
-              subject,
-              htmlContent,
-            }),
+          const result = await sendEmail({
+            config: prof,
+            fromName: profile?.name || 'Darapet',
+            fromEmail: profile?.email || user!.email!,
+            to: email,
+            subject,
+            html: htmlContent,
           });
-          const ok = res.ok;
-          setResults(prev => [...prev, { email, success: ok }]);
+          setResults(prev => [...prev, { email, success: result.ok, error: result.error }]);
           await supabase.from('email_sends').insert({
             user_id: user!.id,
             campaign_id: campaign?.id?.toString(),
             to_email: email,
             subject,
-            provider: 'brevo',
-            status: ok ? 'sent' : 'failed',
+            provider: prof.active_smtp === 'smtp' ? 'smtp' : 'brevo',
+            status: result.ok ? 'sent' : 'failed',
             sent_at: new Date().toISOString(),
           });
         } catch (err) {
