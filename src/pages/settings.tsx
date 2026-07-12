@@ -11,6 +11,26 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, Upload, User, Mail, Key, Pen, Globe, Eye, EyeOff, ChevronDown, ChevronRight, CheckCircle2, AlertCircle } from 'lucide-react';
 import { detectSmtpPreset, type SmtpPreset } from '@/lib/emailSend';
 
+const CLOUDINARY_CLOUD = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME as string;
+const CLOUDINARY_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET as string;
+
+async function uploadToCloudinary(file: File, folder: string): Promise<string> {
+  if (!CLOUDINARY_CLOUD || !CLOUDINARY_PRESET) {
+    throw new Error('Cloudinary is not configured. Add VITE_CLOUDINARY_CLOUD_NAME and VITE_CLOUDINARY_UPLOAD_PRESET to your build environment.');
+  }
+  const form = new FormData();
+  form.append('file', file);
+  form.append('upload_preset', CLOUDINARY_PRESET);
+  form.append('folder', folder);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) throw new Error(`Cloudinary upload failed: ${res.statusText}`);
+  const data = await res.json();
+  return data.secure_url as string;
+}
+
 type SecretField = 'brevo_api_key' | 'sendgrid_api_key' | 'mailgun_api_key' | 'smtp_pass' | 'groq_api_key';
 
 function SecretInput({ visible, onToggle, ...props }: ComponentProps<typeof Input> & { visible: boolean; onToggle: () => void }) {
@@ -117,19 +137,17 @@ export function SettingsPage() {
       let signature_url = profile?.signature_url;
 
       if (logoFile) {
-        const ext = logoFile.name.split('.').pop();
-        const { error } = await supabase.storage.from('avatars').upload(`logos/${user.id}.${ext}`, logoFile, { upsert: true });
-        if (!error) {
-          const { data } = supabase.storage.from('avatars').getPublicUrl(`logos/${user.id}.${ext}`);
-          logo_url = data.publicUrl;
+        try {
+          logo_url = await uploadToCloudinary(logoFile, `darapet/${user.id}`);
+        } catch (err) {
+          toast({ variant: 'destructive', title: 'Logo upload failed', description: err instanceof Error ? err.message : 'Check your Cloudinary settings.' });
         }
       }
       if (sigFile) {
-        const ext = sigFile.name.split('.').pop();
-        const { error } = await supabase.storage.from('avatars').upload(`signatures/${user.id}.${ext}`, sigFile, { upsert: true });
-        if (!error) {
-          const { data } = supabase.storage.from('avatars').getPublicUrl(`signatures/${user.id}.${ext}`);
-          signature_url = data.publicUrl;
+        try {
+          signature_url = await uploadToCloudinary(sigFile, `darapet/${user.id}`);
+        } catch (err) {
+          toast({ variant: 'destructive', title: 'Signature upload failed', description: err instanceof Error ? err.message : 'Check your Cloudinary settings.' });
         }
       }
 

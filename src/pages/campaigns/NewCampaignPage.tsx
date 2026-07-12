@@ -262,7 +262,7 @@ export function NewCampaignPage() {
       logoUrl: (profile as any)?.logo_url || '',
       brandColor: (profile as any)?.brand_color || '#3B82F6',
       subject: subject || tpl.name,
-      body: body || 'Hi there,\n\nI wanted to reach out personally...',
+      body: 'Hi there,\n\nI wanted to reach out personally...',
       signatureUrl: (profile as any)?.signature_url || null,
       recipientName: '{{First Name}}',
     });
