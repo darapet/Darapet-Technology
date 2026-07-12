@@ -456,6 +456,8 @@ export type Database = {
           signature_text: string | null;
           signature_image_url: string | null;
           website_url: string | null;
+          cloudinary_cloud_name: string | null;
+          cloudinary_upload_preset: string | null;
           updated_at: string | null;
         };
         Insert: {
@@ -471,6 +473,8 @@ export type Database = {
           signature_text?: string | null;
           signature_image_url?: string | null;
           website_url?: string | null;
+          cloudinary_cloud_name?: string | null;
+          cloudinary_upload_preset?: string | null;
           updated_at?: string | null;
         };
         Update: {
@@ -486,6 +490,8 @@ export type Database = {
           signature_text?: string | null;
           signature_image_url?: string | null;
           website_url?: string | null;
+          cloudinary_cloud_name?: string | null;
+          cloudinary_upload_preset?: string | null;
           updated_at?: string | null;
         };
         Relationships: NoRelationships;

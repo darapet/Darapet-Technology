@@ -11,18 +11,21 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, Upload, User, Mail, Key, Pen, Globe, Eye, EyeOff, ChevronDown, ChevronRight, CheckCircle2, AlertCircle } from 'lucide-react';
 import { detectSmtpPreset, type SmtpPreset } from '@/lib/emailSend';
 
-const CLOUDINARY_CLOUD = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME as string;
-const CLOUDINARY_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET as string;
+async function getCloudinaryConfig(): Promise<{ cloud: string; preset: string }> {
+  const { data } = await supabase.from('settings').select('cloudinary_cloud_name, cloudinary_upload_preset').eq('id', 1).single();
+  const cloud = data?.cloudinary_cloud_name || '';
+  const preset = data?.cloudinary_upload_preset || '';
+  if (!cloud || !preset) throw new Error('Cloudinary is not configured. Ask your admin to add the Cloud Name and Upload Preset in Admin → Settings.');
+  return { cloud, preset };
+}
 
 async function uploadToCloudinary(file: File, folder: string): Promise<string> {
-  if (!CLOUDINARY_CLOUD || !CLOUDINARY_PRESET) {
-    throw new Error('Cloudinary is not configured. Add VITE_CLOUDINARY_CLOUD_NAME and VITE_CLOUDINARY_UPLOAD_PRESET to your build environment.');
-  }
+  const { cloud, preset } = await getCloudinaryConfig();
   const form = new FormData();
   form.append('file', file);
-  form.append('upload_preset', CLOUDINARY_PRESET);
+  form.append('upload_preset', preset);
   form.append('folder', folder);
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, {
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloud}/image/upload`, {
     method: 'POST',
     body: form,
   });

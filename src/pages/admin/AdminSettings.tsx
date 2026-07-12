@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Mail, Search, Key, Info } from 'lucide-react';
+import { Loader2, Mail, Search, Key, Info, Image } from 'lucide-react';
 
 export function AdminSettings() {
   const { toast } = useToast();
@@ -139,6 +139,34 @@ export function AdminSettings() {
               placeholder="50"
               className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
             <p className="text-xs text-white/30">Maximum emails a new user can send per day (0 = unlimited)</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Cloudinary */}
+      <Card className="bg-white/5 border-white/5">
+        <CardHeader>
+          <CardTitle className="text-white flex items-center gap-2"><Image className="w-5 h-5 text-orange-400" /> Image Storage (Cloudinary)</CardTitle>
+          <CardDescription className="text-white/40">Used for storing user logo and signature uploads. Create a free account at cloudinary.com, then create an <strong className="text-white/60">unsigned</strong> upload preset.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label className="text-white/70">Cloud Name</Label>
+            <Input value={settings.cloudinary_cloud_name || ''} onChange={e => set('cloudinary_cloud_name', e.target.value)}
+              placeholder="e.g. mycompany"
+              className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+            <p className="text-xs text-white/30 flex items-start gap-1">
+              <Info className="w-3 h-3 mt-0.5 shrink-0" /> Found in your Cloudinary dashboard top-left under your account name.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-white/70">Upload Preset (unsigned)</Label>
+            <Input value={settings.cloudinary_upload_preset || ''} onChange={e => set('cloudinary_upload_preset', e.target.value)}
+              placeholder="e.g. du7misvms"
+              className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+            <p className="text-xs text-white/30 flex items-start gap-1">
+              <Info className="w-3 h-3 mt-0.5 shrink-0" /> Settings → Upload → Upload Presets → create one with Signing Mode set to <strong className="text-white/50">Unsigned</strong>.
+            </p>
           </div>
         </CardContent>
       </Card>
