@@ -1,46 +1,38 @@
 <!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-    <title>Darapet Lead Engine</title>
-    <meta name="description" content="Darapet Lead Engine — built on Replit. Update this description to reflect the app." />
-    <meta name="robots" content="index, follow" />
-    <meta property="og:title" content="Darapet Lead Engine" />
-    <meta property="og:description" content="Darapet Lead Engine — built on Replit. Update this description to reflect the app." />
-    <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Darapet Lead Engine" />
-    <meta name="twitter:description" content="Darapet Lead Engine — built on Replit. Update this description to reflect the app." />
-    <link rel="icon" type="image/svg+xml" href="/Darapet-Technology/favicon.svg" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script>
-      (function(l) {
-        // Step 1: decode the 404.html SPA redirect (?p=path)
-        var p = new URLSearchParams(l.search).get('p');
-        if (p) {
-          var q = new URLSearchParams(l.search).get('q');
-          window.history.replaceState(null, null,
-            l.pathname.replace(/\/$/, '') + '/' + p.replace(/~and~/g, '&') +
-            (q ? '?' + q.replace(/~and~/g, '&') : '') + l.hash
-          );
-          l = window.location;
-        }
-        // Step 2: strip the GitHub Pages base path (/Darapet-Technology)
-        // so Wouter (compiled with base="") can match routes like /, /login, /leads etc.
-        var base = '/Darapet-Technology';
-        if (l.pathname === base || l.pathname.startsWith(base + '/')) {
-          var stripped = l.pathname.slice(base.length) || '/';
-          window.history.replaceState(null, null, stripped + l.search + l.hash);
-        }
-      }(window.location))
-    </script>
-    <script type="module" crossorigin src="/Darapet-Technology/assets/index-DY6uF7H3.js"></script>
-    <link rel="stylesheet" crossorigin href="/Darapet-Technology/assets/index-C__ZBWf7.css">
-  </head>
-  <body>
-    <div id="root"></div>
-  </body>
-</html>
+  <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+      <title>Darapet</title>
+      <meta name="description" content="Darapet — Email campaign platform." />
+      <meta name="robots" content="index, follow" />
+      <meta property="og:title" content="Darapet" />
+      <meta property="og:description" content="Darapet — Email campaign platform." />
+      <meta property="og:type" content="website" />
+      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:title" content="Darapet" />
+      <meta name="twitter:description" content="Darapet — Email campaign platform." />
+      <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+      <link rel="preconnect" href="https://fonts.googleapis.com">
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+      <script>
+        (function(l) {
+          // Decode the 404.html SPA redirect (?p=path)
+          var p = new URLSearchParams(l.search).get('p');
+          if (p) {
+            var q = new URLSearchParams(l.search).get('q');
+            window.history.replaceState(null, null,
+              l.pathname.replace(/\/$/, '') + '/' + p.replace(/~and~/g, '&') +
+              (q ? '?' + q.replace(/~and~/g, '&') : '') + l.hash
+            );
+          }
+        }(window.location))
+      </script>
+    </head>
+    <body>
+      <div id="root"></div>
+      <script type="module" src="/src/main.tsx"></script>
+    </body>
+  </html>
+  
