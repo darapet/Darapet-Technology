@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { detectSmtpPreset, type SmtpPreset } from '@/lib/emailSend';
 import { SOCIAL_PLATFORMS, SOCIAL_CATEGORIES } from '@/data/socialMedia';
+import { SocialIcon } from '@/data/socialIcons';
 import type { SocialLink } from '@/pages/email/emailTemplates';
 
 // ─── Cloudinary ───────────────────────────────────────────────────────────────
@@ -157,10 +158,10 @@ function SocialLinksManager({
                   <div key={link.platform} className="flex items-center gap-3">
                     {/* Platform badge */}
                     <div
-                      className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-base shadow-sm"
+                      className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center shadow-sm"
                       style={{ backgroundColor: platform.color + '18', border: `1px solid ${platform.color}30` }}
                     >
-                      {platform.icon}
+                      <SocialIcon platformId={platform.id} color={platform.color} size={16} />
                     </div>
                     {/* URL input */}
                     <div className="flex-1 min-w-0">
@@ -238,10 +239,10 @@ function SocialLinksManager({
                       className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl border border-border hover:border-primary/50 hover:bg-primary/5 transition-all text-center group"
                     >
                       <span
-                        className="w-9 h-9 rounded-xl flex items-center justify-center text-xl shadow-sm transition-transform group-hover:scale-110"
+                        className="w-9 h-9 rounded-xl flex items-center justify-center shadow-sm transition-transform group-hover:scale-110"
                         style={{ backgroundColor: p.color + '15', border: `1px solid ${p.color}25` }}
                       >
-                        {p.icon}
+                        <SocialIcon platformId={p.id} color={p.color} size={18} />
                       </span>
                       <span className="text-[10px] font-medium leading-tight text-muted-foreground group-hover:text-foreground line-clamp-2">
                         {p.name}

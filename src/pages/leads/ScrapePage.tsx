@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { COUNTRIES } from '@/data/countries';
 import { SOCIAL_PLATFORMS, SOCIAL_CATEGORIES } from '@/data/socialMedia';
+import { SocialIcon } from '@/data/socialIcons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -331,7 +332,7 @@ export function ScrapePage() {
                         <button key={platform.id} onClick={() => setSelectedSocial(platform.id)}
                           className={cn('flex items-center gap-2 p-3 rounded-xl border text-sm font-medium transition-all text-left',
                             selectedSocial === platform.id ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:border-primary/30')}>
-                          <span className="text-lg shrink-0">{platform.icon}</span>
+                          <SocialIcon platformId={platform.id} color={platform.color} size={18} className="shrink-0" />
                           <span className="truncate">{platform.name}</span>
                         </button>
                       ))}
@@ -339,7 +340,8 @@ export function ScrapePage() {
                     {selectedSocial && (
                       <div className="p-3 bg-primary/5 rounded-lg border border-primary/20 text-sm">
                         <span className="text-primary font-medium">
-                          {SOCIAL_PLATFORMS.find(p => p.id === selectedSocial)?.icon} {SOCIAL_PLATFORMS.find(p => p.id === selectedSocial)?.name}
+                          {selectedSocial && <SocialIcon platformId={selectedSocial} color={SOCIAL_PLATFORMS.find(p => p.id === selectedSocial)?.color} size={16} className="inline-block mr-1.5 align-middle" />}
+                          {SOCIAL_PLATFORMS.find(p => p.id === selectedSocial)?.name}
                         </span>
                         <span className="text-muted-foreground"> selected. Only one platform per scrape.</span>
                       </div>

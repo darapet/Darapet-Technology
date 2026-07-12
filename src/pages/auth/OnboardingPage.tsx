@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, CheckCircle2, Upload, Globe, Phone, Building2, User, ChevronRight, ChevronLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SOCIAL_PLATFORMS } from '@/data/socialMedia';
+import { SocialIcon } from '@/data/socialIcons';
 
 const BUSINESS_CATEGORIES = [
   'Student', 'Freelancer', 'Developer', 'Designer',
@@ -239,7 +240,9 @@ export function OnboardingPage() {
                   <div className="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto pr-1">
                     {SOCIAL_PLATFORMS.slice(0, 20).map(platform => (
                       <div key={platform.id} className="flex items-center gap-3">
-                        <span className="text-lg w-8 text-center">{platform.icon}</span>
+                        <span className="w-8 flex items-center justify-center shrink-0">
+                          <SocialIcon platformId={platform.id} color={platform.color} size={18} />
+                        </span>
                         <span className="text-sm text-white/70 w-28 shrink-0">{platform.name}</span>
                         <Input
                           placeholder={`https://${platform.domain}/yourprofile`}
@@ -266,7 +269,12 @@ export function OnboardingPage() {
                       <div className="flex flex-wrap gap-1">
                         {Object.keys(form.socials).map(id => {
                           const p = SOCIAL_PLATFORMS.find(pl => pl.id === id);
-                          return p ? <Badge key={id} variant="outline" className="text-white/70 border-white/20">{p.icon} {p.name}</Badge> : null;
+                          return p ? (
+                            <Badge key={id} variant="outline" className="text-white/70 border-white/20 inline-flex items-center gap-1">
+                              <SocialIcon platformId={id} color={p.color} size={12} />
+                              {p.name}
+                            </Badge>
+                          ) : null;
                         })}
                       </div>
                     )}
