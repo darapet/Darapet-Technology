@@ -29,7 +29,24 @@ async function uploadToCloudinary(file: File, folder: string): Promise<string> {
     method: 'POST',
     body: form,
   });
-  if (!res.ok) throw new Error(`Cloudinary upload failed: ${res.statusText}`);
+  if (!res.ok) {
+    // Parse Cloudinary's JSON error body so we show the real reason
+    // (e.g. "Upload preset must be whitelisted for unsigned uploads" / "Upload preset not found")
+    let reason = res.statusText;
+    try {
+      const errBody = await res.json();
+      reason = errBody?.error?.message ?? reason;
+    } catch {
+      // ignore parse errors — fall back to statusText
+    }
+    if (res.status === 401 || res.status === 400) {
+      throw new Error(
+        `Cloudinary upload failed: ${reason}. ` +
+        `Make sure the Upload Preset in Admin → Settings → Image Storage is set to "Unsigned" signing mode in your Cloudinary dashboard (Settings → Upload → Upload Presets).`
+      );
+    }
+    throw new Error(`Cloudinary upload failed: ${reason}`);
+  }
   const data = await res.json();
   return data.secure_url as string;
 }
