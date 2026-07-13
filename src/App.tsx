@@ -10,7 +10,6 @@ import { Spinner } from '@/components/ui/spinner';
 // Auth pages
 import { LoginPage } from '@/pages/auth/LoginPage';
 import { RegisterPage } from '@/pages/auth/RegisterPage';
-import { OnboardingPage } from '@/pages/auth/OnboardingPage';
 import { SuspendedPage, BannedPage } from '@/pages/auth/SuspendedPage';
 import { RestrictedPage } from '@/pages/auth/RestrictedPage';
 
@@ -39,7 +38,7 @@ const queryClient = new QueryClient({
 });
 
 function AppRoutes() {
-  const { user, isLoading, isOnboarded } = useAuth();
+  const { user, isLoading } = useAuth();
 
   if (isLoading) {
     return (
@@ -53,10 +52,10 @@ function AppRoutes() {
     <Switch>
       {/* Public auth routes — redirect away if already signed in */}
       <Route path="/login">
-        {user && isOnboarded ? <Redirect to="/" /> : <LoginPage />}
+        {user ? <Redirect to="/" /> : <LoginPage />}
       </Route>
       <Route path="/register">
-        {user && isOnboarded ? <Redirect to="/" /> : <RegisterPage />}
+        {user ? <Redirect to="/" /> : <RegisterPage />}
       </Route>
 
       {/* Account status pages */}
@@ -64,9 +63,9 @@ function AppRoutes() {
       <Route path="/banned" component={BannedPage} />
       <Route path="/restricted" component={RestrictedPage} />
 
-      {/* Onboarding — requires auth but not full profile */}
+      {/* Onboarding wizard was removed — send anyone hitting the old link to Settings */}
       <Route path="/onboarding">
-        {!user ? <Redirect to="/login" /> : isOnboarded ? <Redirect to="/" /> : <OnboardingPage />}
+        {!user ? <Redirect to="/login" /> : <Redirect to="/settings" />}
       </Route>
 
       {/* Admin routes */}
@@ -104,11 +103,7 @@ function AppRoutes() {
       {/* Protected app routes */}
       <Route path="/">
         <ProtectedRoute>
-          {!isOnboarded && user ? (
-            <Redirect to="/onboarding" />
-          ) : (
-            <AppLayout><Dashboard /></AppLayout>
-          )}
+          <AppLayout><Dashboard /></AppLayout>
         </ProtectedRoute>
       </Route>
 

@@ -13,9 +13,7 @@ export function RegisterPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -25,7 +23,6 @@ export function RegisterPage() {
 
     if (!name.trim()) { setError('Please enter your name.'); return; }
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
-    if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
 
     setLoading(true);
 
@@ -44,7 +41,7 @@ export function RegisterPage() {
     }
 
     setLoading(false);
-    setLocation('/onboarding');
+    setLocation('/settings');
   };
 
   return (
@@ -114,26 +111,6 @@ export function RegisterPage() {
                   <button type="button" onClick={() => setShowPassword(v => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-300/60 hover:text-blue-200">
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Confirm Password */}
-              <div className="space-y-1.5">
-                <Label className="text-blue-100 text-sm">Confirm Password</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-300/60" />
-                  <Input
-                    type={showConfirm ? 'text' : 'password'}
-                    value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
-                    placeholder="Repeat your password"
-                    required
-                    className="pl-9 pr-10 bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:border-blue-400 focus:bg-white/15"
-                  />
-                  <button type="button" onClick={() => setShowConfirm(v => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-300/60 hover:text-blue-200">
-                    {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
