@@ -105,11 +105,11 @@ import {
 
     const logoBlock = p.logoUrl
       ? `<table border="0" cellpadding="0" cellspacing="0"><tr>
-           <td><img src="${p.logoUrl}" alt="${p.brandName}" height="32"
-             style="max-height:32px;max-width:120px;object-fit:contain;display:block;"></td>
-           <td style="padding-left:10px;"><span style="font-family:${F};font-size:14px;font-weight:800;color:#0f172a;letter-spacing:-0.3px;">${p.brandName}</span></td>
+           <td valign="middle"><img src="${p.logoUrl}" alt="${p.brandName}" height="22"
+             style="max-height:22px;max-width:90px;object-fit:contain;display:block;"></td>
+           <td valign="middle" style="padding-left:8px;"><span style="font-family:${F};font-size:13px;font-weight:700;color:#0f172a;letter-spacing:-0.2px;">${p.brandName}</span></td>
          </tr></table>`
-      : `<span style="font-family:${F};font-size:15px;font-weight:800;color:#0f172a;letter-spacing:-0.3px;">${p.brandName}</span>`;
+      : `<span style="font-family:${F};font-size:13px;font-weight:700;color:#0f172a;letter-spacing:-0.2px;">${p.brandName}</span>`;
 
     const greeting = p.recipientName && p.recipientName !== '{{First Name}}'
       ? `<p style="margin:0 0 20px;font-family:${F};font-size:16px;color:#64748b;">Hi ${p.recipientName},</p>`
@@ -151,10 +151,10 @@ import {
     <tr><td style="height:4px;background:${accentColor};font-size:0;line-height:0;">&nbsp;</td></tr>
 
     <!-- NAV BAR -->
-    <tr><td bgcolor="#ffffff" style="padding:20px 40px;border-bottom:1px solid #f1f5f9;">
+    <tr><td bgcolor="#ffffff" style="padding:12px 32px;border-bottom:1px solid #f1f5f9;">
       <table border="0" cellpadding="0" cellspacing="0" width="100%"><tr>
-        <td>${logoBlock}</td>
-        ${p.websiteUrl ? `<td align="right"><a href="${p.websiteUrl}" style="font-family:${F};font-size:12px;font-weight:600;color:#94a3b8;text-decoration:none;letter-spacing:0.3px;">Visit website &rarr;</a></td>` : ''}
+        <td valign="middle">${logoBlock}</td>
+        ${p.websiteUrl ? `<td valign="middle" align="right"><a href="${p.websiteUrl}" style="font-family:${F};font-size:11px;font-weight:600;color:#94a3b8;text-decoration:none;letter-spacing:0.3px;">Visit website &rarr;</a></td>` : ''}
       </tr></table>
     </td></tr>
 

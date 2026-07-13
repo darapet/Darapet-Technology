@@ -285,7 +285,7 @@ export function NewCampaignPage() {
    *   rawBodyContent (from a previous AI generation or manual edit), then
    *   to a default placeholder if neither exists.
    */
-  const applyTemplate = (templateId: string, bodyContent?: string, headerColor?: string, bgColor?: string) => {
+  const applyTemplate = (templateId: string, bodyContent?: string, headerColor?: string, bgColor?: string, ctaUrlOverride?: string) => {
     const tpl = EMAIL_TEMPLATES.find(t => t.id === templateId);
     if (!tpl) return;
     setSelectedTemplateId(templateId);
@@ -306,7 +306,7 @@ export function NewCampaignPage() {
       recipientName: '{{First Name}}',
       socialLinks: profileSocialLinks,
       websiteUrl: (profile as any)?.website_url || '',
-      ctaUrl: ctaUrl || (profile as any)?.website_url || '#',
+      ctaUrl: (ctaUrlOverride ?? ctaUrl) || (profile as any)?.website_url || '#',
     });
     setBody(html);
     if (!subject) setSubject(tpl.name);
@@ -531,6 +531,21 @@ export function NewCampaignPage() {
                           <span className="text-[11px] text-muted-foreground font-mono">{tplBgColor}</span>
                         </div>
                       </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                        <Link2 className="w-3 h-3" /> Button link (CTA URL)
+                      </label>
+                      <Input
+                        value={ctaUrl}
+                        onChange={e => {
+                          setCtaUrl(e.target.value);
+                          if (selectedTemplateId) applyTemplate(selectedTemplateId, undefined, tplHeaderColor, tplBgColor, e.target.value);
+                        }}
+                        placeholder="https://yoursite.com/offer"
+                        className="bg-white dark:bg-white/5 h-8 text-xs"
+                      />
+                      <p className="text-[11px] text-muted-foreground">Where the template's call-to-action button sends recipients. Falls back to your website URL if left blank.</p>
                     </div>
                     {/* Social links status */}
                     {(() => {
