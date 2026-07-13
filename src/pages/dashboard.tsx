@@ -114,13 +114,13 @@ export function Dashboard() {
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">
+          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
             Welcome back{profile?.name ? `, ${profile.name.split(' ')[0]}` : ''}! 👋
           </h1>
           <p className="text-muted-foreground mt-2">Your email campaign command center.</p>
         </div>
         <Link href="/campaigns/new">
-          <Button className="gap-2 hidden sm:flex">
+          <Button className="gap-2 hidden sm:flex shadow-sm shadow-primary/20 hover:shadow-md hover:shadow-primary/30 transition-shadow">
             <Plus className="w-4 h-4" /> New Campaign
           </Button>
         </Link>
@@ -129,22 +129,22 @@ export function Dashboard() {
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {STATS.map(({ label, value, icon: Icon, color, bg, border }) => (
-          <Card key={label} className={`border-t-4 ${border} shadow-sm`}>
+          <Card key={label} className={`border-t-4 ${border} shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200`}>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
-              <div className={`w-9 h-9 rounded-lg ${bg} flex items-center justify-center`}>
+              <div className={`w-9 h-9 rounded-lg ${bg} flex items-center justify-center ring-1 ring-inset ring-black/5`}>
                 <Icon className={`w-4 h-4 ${color}`} />
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{value.toLocaleString()}</div>
+              <div className="text-2xl font-bold tracking-tight">{value.toLocaleString()}</div>
             </CardContent>
           </Card>
         ))}
       </div>
 
       {/* Recent campaigns */}
-      <Card>
+      <Card className="shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Recent Campaigns</CardTitle>
           <Link href="/campaigns/history">
@@ -199,8 +199,10 @@ export function Dashboard() {
       {/* Quick links */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Link href="/campaigns/new">
-          <a className="flex items-center gap-3 p-4 rounded-xl border border-border hover:border-primary/40 hover:bg-primary/5 transition-all">
-            <Send className="w-5 h-5 text-primary" />
+          <a className="group flex items-center gap-3 p-4 rounded-xl border border-border bg-card hover:border-primary/40 hover:bg-primary/5 hover:shadow-sm transition-all">
+            <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+              <Send className="w-4 h-4 text-primary" />
+            </div>
             <div>
               <p className="font-medium text-sm">New Campaign</p>
               <p className="text-xs text-muted-foreground">Compose and send emails</p>
@@ -208,8 +210,10 @@ export function Dashboard() {
           </a>
         </Link>
         <Link href="/campaigns/history">
-          <a className="flex items-center gap-3 p-4 rounded-xl border border-border hover:border-blue-400/40 hover:bg-blue-50/50 transition-all">
-            <History className="w-5 h-5 text-blue-500" />
+          <a className="group flex items-center gap-3 p-4 rounded-xl border border-border bg-card hover:border-blue-400/40 hover:bg-blue-500/5 hover:shadow-sm transition-all">
+            <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+              <History className="w-4 h-4 text-blue-500" />
+            </div>
             <div>
               <p className="font-medium text-sm">Campaign History</p>
               <p className="text-xs text-muted-foreground">View past campaigns</p>
@@ -217,8 +221,10 @@ export function Dashboard() {
           </a>
         </Link>
         <Link href="/campaigns/automation">
-          <a className="flex items-center gap-3 p-4 rounded-xl border border-border hover:border-amber-400/40 hover:bg-amber-50/50 transition-all">
-            <Zap className="w-5 h-5 text-amber-500" />
+          <a className="group flex items-center gap-3 p-4 rounded-xl border border-border bg-card hover:border-amber-400/40 hover:bg-amber-500/5 hover:shadow-sm transition-all">
+            <div className="w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+              <Zap className="w-4 h-4 text-amber-500" />
+            </div>
             <div>
               <p className="font-medium text-sm">Automation</p>
               <p className="text-xs text-muted-foreground">Schedule & automate sends</p>

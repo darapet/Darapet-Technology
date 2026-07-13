@@ -48,12 +48,12 @@ import {
     const F = `-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif`;
 
     const cta = (label: string, color: string, href = '#', light = false) =>
-    `<table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin:24px 0 8px;">
+    `<table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin:26px 0 10px;">
       <tr><td align="center">
         <table border="0" cellpadding="0" cellspacing="0">
-          <tr><td align="center" bgcolor="${color}" style="border-radius:8px;">
+          <tr><td align="center" bgcolor="${color}" style="border-radius:10px;box-shadow:0 6px 18px ${color}40;">
             <a href="${href}" target="_blank" class="btn-full"
-              style="display:inline-block;padding:11px 28px;font-family:${F};font-size:13px;font-weight:600;color:${light ? '#000000' : '#ffffff'};text-decoration:none;border-radius:8px;letter-spacing:0.3px;white-space:nowrap;">${label} &rarr;</a>
+              style="display:inline-block;padding:13px 32px;font-family:${F};font-size:13.5px;font-weight:700;color:${light ? '#000000' : '#ffffff'};text-decoration:none;border-radius:10px;letter-spacing:0.4px;white-space:nowrap;">${label} &rarr;</a>
           </td></tr>
         </table>
       </td></tr>
