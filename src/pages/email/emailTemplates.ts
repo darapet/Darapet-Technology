@@ -11,6 +11,8 @@ import {
     subject: string; body: string; signatureUrl: string | null;
     recipientName: string; socialLinks?: SocialLink[];
     websiteUrl?: string; ctaUrl?: string;
+    /** URL that unsubscribes the recipient. Required for Gmail/Yahoo bulk delivery. */
+    unsubscribeUrl?: string;
     }
     interface EmailTemplate {
     id: string; name: string; category: string;
@@ -178,9 +180,9 @@ import {
       </table>` : ''}
       <p style="margin:0 0 6px;font-family:${F};font-size:13px;font-weight:700;color:#e2e8f0;text-align:center;">${p.brandName}</p>
       <p style="margin:0 0 16px;font-family:${F};font-size:11px;color:#475569;text-align:center;line-height:2;">
-        <a href="#" style="color:#475569;text-decoration:underline;">Unsubscribe</a>&nbsp;&middot;&nbsp;
-        <a href="#" style="color:#475569;text-decoration:underline;">Privacy Policy</a>&nbsp;&middot;&nbsp;
-        <a href="#" style="color:#475569;text-decoration:underline;">View in browser</a>
+        <a href="${p.unsubscribeUrl || `mailto:?subject=unsubscribe`}" style="color:#475569;text-decoration:underline;">Unsubscribe</a>&nbsp;&middot;&nbsp;
+        ${p.websiteUrl ? `<a href="${p.websiteUrl}/privacy" style="color:#475569;text-decoration:underline;">Privacy Policy</a>&nbsp;&middot;&nbsp;` : ''}
+        <a href="${p.websiteUrl || '#'}" style="color:#475569;text-decoration:underline;">View in browser</a>
       </p>
       <p style="margin:0;font-family:${F};font-size:10px;color:#334155;text-align:center;">You received this because you're subscribed to ${p.brandName} updates.</p>
     </td></tr>

@@ -53,15 +53,21 @@
     close() { try { this.#conn.close(); } catch { /**/ } }
     }
 
-    function buildMsg(o: { fromEmail:string; fromName?:string; to:string; subject:string; html:string; host:string }) {
+    function buildMsg(o: { fromEmail:string; fromName?:string; to:string; subject:string; html:string; host:string; unsubscribeUrl?:string }) {
     const from = o.fromName ? `${o.fromName} <${o.fromEmail}>` : o.fromEmail;
-    return [
+    const unsubMailto = `<mailto:${o.fromEmail}?subject=unsubscribe>`;
+    const listUnsub = o.unsubscribeUrl ? `${unsubMailto}, <${o.unsubscribeUrl}>` : unsubMailto;
+    const headers = [
       `From: ${from}`, `To: ${o.to}`, `Subject: ${o.subject}`,
       `Date: ${new Date().toUTCString()}`,
       `Message-ID: <${crypto.randomUUID()}@${o.host}>`,
-      "MIME-Version: 1.0", 'Content-Type: text/html; charset="UTF-8"', "",
-      o.html.replace(/\r\n\.\r\n/g, "\r\n..\r\n"), ".",
-    ].join("\r\n");
+      "MIME-Version: 1.0", 'Content-Type: text/html; charset="UTF-8"',
+      "Precedence: bulk",
+      `List-Unsubscribe: ${listUnsub}`,
+    ];
+    if (o.unsubscribeUrl) headers.push("List-Unsubscribe-Post: List-Unsubscribe=One-Click");
+    headers.push("", o.html.replace(/\r\n\.\r\n/g, "\r\n..\r\n"), ".");
+    return headers.join("\r\n");
     }
 
     async function smtpSend(profile: Profile, to: string, subject: string, html: string): Promise<{ok:boolean;error?:string}> {
@@ -73,14 +79,15 @@
       conn = await Deno.connect({ hostname: host, port });
       session = new SmtpSession(conn);
       await session.expect(["220"], "BANNER");
+      const senderDomain = profile.smtp_user!.split("@")[1] || host;
       if (secure) {
-        await session.send("EHLO localhost"); await session.expect(["250"], "EHLO");
+        await session.send(`EHLO ${senderDomain}`); await session.expect(["250"], "EHLO");
         await session.send("STARTTLS"); await session.expect(["220"], "STARTTLS");
         session.releaseForUpgrade();
         conn = await Deno.startTls(conn, { hostname: host });
         session = new SmtpSession(conn);
       }
-      await session.send("EHLO localhost"); await session.expect(["250"], "EHLO");
+      await session.send(`EHLO ${senderDomain}`); await session.expect(["250"], "EHLO");
       await session.send("AUTH LOGIN"); await session.expect(["334"], "AUTH");
       await session.send(btoa(profile.smtp_user!)); await session.expect(["334"], "USER");
       await session.send(btoa(profile.smtp_pass!)); await session.expect(["235"], "PASS");

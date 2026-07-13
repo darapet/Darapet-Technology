@@ -104,13 +104,23 @@ function buildMessage(opts: {
   subject: string;
   html: string;
   host: string;
+  unsubscribeUrl?: string;
 }): string {
   const from = opts.fromName ? `${opts.fromName} <${opts.fromEmail}>` : opts.fromEmail;
   const date = new Date().toUTCString();
   const messageId = `<${crypto.randomUUID()}@${opts.host}>`;
   // Dot-stuff any line that is exactly "." per RFC 5321 DATA framing.
   const escapedHtml = opts.html.replace(/\r\n\.\r\n/g, "\r\n..\r\n");
-  return [
+
+  // Build List-Unsubscribe header. Gmail & Yahoo require this for bulk/marketing
+  // mail since Feb 2024. We always include a mailto fallback; if a URL is
+  // provided we also add the one-click mechanism (RFC 8058).
+  const unsubMailto = `<mailto:${opts.fromEmail}?subject=unsubscribe>`;
+  const listUnsub = opts.unsubscribeUrl
+    ? `${unsubMailto}, <${opts.unsubscribeUrl}>`
+    : unsubMailto;
+
+  const headers: string[] = [
     `From: ${from}`,
     `To: ${opts.to}`,
     `Subject: ${opts.subject}`,
@@ -118,14 +128,20 @@ function buildMessage(opts: {
     `Message-ID: ${messageId}`,
     `MIME-Version: 1.0`,
     `Content-Type: text/html; charset="UTF-8"`,
-    ``,
-    escapedHtml,
-    `.`,
-  ].join("\r\n");
+    `Precedence: bulk`,
+    `List-Unsubscribe: ${listUnsub}`,
+  ];
+  if (opts.unsubscribeUrl) {
+    headers.push(`List-Unsubscribe-Post: List-Unsubscribe=One-Click`);
+  }
+  headers.push(``, escapedHtml, `.`);
+  return headers.join("\r\n");
 }
 
 async function authenticateAndSend(session: SmtpSession, req: SendRequest) {
-  await session.send(`EHLO localhost`);
+  // Use the sender's domain for EHLO — "localhost" is flagged by spam filters.
+  const senderDomain = req.fromEmail.split("@")[1] || req.host;
+  await session.send(`EHLO ${senderDomain}`);
   await session.expect(["250"], "EHLO");
 
   await session.send("AUTH LOGIN");
@@ -175,7 +191,8 @@ async function sendSmtp(req: SendRequest): Promise<void> {
 
     if (!implicitTls) {
       // Announce, then upgrade via STARTTLS (e.g. Gmail on port 587).
-      await session.send(`EHLO localhost`);
+      const senderDomain = req.fromEmail.split("@")[1] || req.host;
+      await session.send(`EHLO ${senderDomain}`);
       await session.expect(["250"], "EHLO (plaintext)");
 
       await session.send("STARTTLS");
