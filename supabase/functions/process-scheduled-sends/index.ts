@@ -57,17 +57,29 @@
     const from = o.fromName ? `${o.fromName} <${o.fromEmail}>` : o.fromEmail;
     const unsubMailto = `<mailto:${o.fromEmail}?subject=unsubscribe>`;
     const listUnsub = o.unsubscribeUrl ? `${unsubMailto}, <${o.unsubscribeUrl}>` : unsubMailto;
-    const headers = [
+    const boundary = `boundary_${crypto.randomUUID().replace(/-/g,"")}`;
+    const escapedHtml = o.html.replace(/\r\n\.\r\n/g, "\r\n..\r\n");
+    const plainText = o.html
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi,"")
+      .replace(/<[^>]+>/g,"").replace(/&nbsp;/g," ")
+      .replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">")
+      .replace(/\s{2,}/g," ").trim();
+    const headerLines = [
       `From: ${from}`, `To: ${o.to}`, `Subject: ${o.subject}`,
       `Date: ${new Date().toUTCString()}`,
       `Message-ID: <${crypto.randomUUID()}@${o.host}>`,
-      "MIME-Version: 1.0", 'Content-Type: text/html; charset="UTF-8"',
-      "Precedence: bulk",
-      `List-Unsubscribe: ${listUnsub}`,
+      "MIME-Version: 1.0", `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      "Precedence: bulk", `List-Unsubscribe: ${listUnsub}`,
     ];
-    if (o.unsubscribeUrl) headers.push("List-Unsubscribe-Post: List-Unsubscribe=One-Click");
-    headers.push("", o.html.replace(/\r\n\.\r\n/g, "\r\n..\r\n"), ".");
-    return headers.join("\r\n");
+    if (o.unsubscribeUrl) headerLines.push("List-Unsubscribe-Post: List-Unsubscribe=One-Click");
+    const body = [
+      `--${boundary}`,`Content-Type: text/plain; charset="UTF-8"`,
+      "Content-Transfer-Encoding: quoted-printable","",plainText,"",
+      `--${boundary}`,`Content-Type: text/html; charset="UTF-8"`,
+      "Content-Transfer-Encoding: quoted-printable","",escapedHtml,"",
+      `--${boundary}--`,".",
+    ].join("\r\n");
+    return [...headerLines,"",body].join("\r\n");
     }
 
     async function smtpSend(profile: Profile, to: string, subject: string, html: string): Promise<{ok:boolean;error?:string}> {

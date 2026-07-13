@@ -143,7 +143,7 @@ import {
     </style>
     </head>
     <body>
-    <div style="display:none;max-height:0;overflow:hidden;font-size:1px;color:${outerBg};">${previewText}&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;</div>
+    <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${previewText}</div>
     <table border="0" cellpadding="0" cellspacing="0" width="100%" bgcolor="${outerBg}">
     <tr><td align="center" style="padding:32px 16px;">
     <table class="email-card" border="0" cellpadding="0" cellspacing="0" width="600"
@@ -181,7 +181,7 @@ import {
       <p style="margin:0 0 6px;font-family:${F};font-size:13px;font-weight:700;color:#e2e8f0;text-align:center;">${p.brandName}</p>
       <p style="margin:0 0 16px;font-family:${F};font-size:11px;color:#475569;text-align:center;line-height:2;">
         <a href="${p.unsubscribeUrl || `mailto:?subject=unsubscribe`}" style="color:#475569;text-decoration:underline;">Unsubscribe</a>&nbsp;&middot;&nbsp;
-        ${p.websiteUrl ? `<a href="${p.websiteUrl}/privacy" style="color:#475569;text-decoration:underline;">Privacy Policy</a>&nbsp;&middot;&nbsp;` : ''}
+        ${p.websiteUrl ? `<a href="${p.websiteUrl}" style="color:#475569;text-decoration:underline;">Privacy Policy</a>&nbsp;&middot;&nbsp;` : ''}
         <a href="${p.websiteUrl || '#'}" style="color:#475569;text-decoration:underline;">View in browser</a>
       </p>
       <p style="margin:0;font-family:${F};font-size:10px;color:#334155;text-align:center;">You received this because you're subscribed to ${p.brandName} updates.</p>

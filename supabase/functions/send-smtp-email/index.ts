@@ -120,22 +120,52 @@ function buildMessage(opts: {
     ? `${unsubMailto}, <${opts.unsubscribeUrl}>`
     : unsubMailto;
 
-  const headers: string[] = [
+  // Strip HTML tags for the plain-text part so spam filters see real content.
+  const plainText = opts.html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  const boundary = `boundary_${crypto.randomUUID().replace(/-/g, "")}`;
+
+  const headerLines: string[] = [
     `From: ${from}`,
     `To: ${opts.to}`,
     `Subject: ${opts.subject}`,
     `Date: ${date}`,
     `Message-ID: ${messageId}`,
     `MIME-Version: 1.0`,
-    `Content-Type: text/html; charset="UTF-8"`,
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
     `Precedence: bulk`,
     `List-Unsubscribe: ${listUnsub}`,
   ];
   if (opts.unsubscribeUrl) {
-    headers.push(`List-Unsubscribe-Post: List-Unsubscribe=One-Click`);
+    headerLines.push(`List-Unsubscribe-Post: List-Unsubscribe=One-Click`);
   }
-  headers.push(``, escapedHtml, `.`);
-  return headers.join("\r\n");
+
+  const body = [
+    `--${boundary}`,
+    `Content-Type: text/plain; charset="UTF-8"`,
+    `Content-Transfer-Encoding: quoted-printable`,
+    ``,
+    plainText,
+    ``,
+    `--${boundary}`,
+    `Content-Type: text/html; charset="UTF-8"`,
+    `Content-Transfer-Encoding: quoted-printable`,
+    ``,
+    escapedHtml,
+    ``,
+    `--${boundary}--`,
+    `.`,
+  ].join("\r\n");
+
+  return [...headerLines, ``, body].join("\r\n");
 }
 
 async function authenticateAndSend(session: SmtpSession, req: SendRequest) {
