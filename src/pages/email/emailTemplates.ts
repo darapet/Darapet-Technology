@@ -208,7 +208,7 @@ import {
         `Introducing something new from ${p.brandName}`,
         eyebrow('NEW ARRIVAL', 'rgba(255,255,255,0.55)') +
         heroHeadline(`${p.brandName}<br>just got better.`, '#ffffff', '34px') +
-        heroSub('Something we've been perfecting — now available.'),
+        heroSub("Something we've been perfecting — now available."),
         bodyText(p.body) +
         cta('Get Started Now', p.brandColor, p.ctaUrl || '#'),
         p.brandColor, p,
@@ -232,7 +232,7 @@ import {
         `A personal note from ${p.brandName}`,
         eyebrow('A PERSONAL NOTE', 'rgba(255,255,255,0.5)') +
         heroHeadline('Reaching out<br>with purpose.', '#ffffff', '32px') +
-        heroSub('I'll keep this short — I think there's something here worth exploring.'),
+        heroSub("I'll keep this short — I think there's something here worth exploring."),
         bodyText(p.body) + divider() +
         `<p style="font-family:${F};font-size:13px;color:#94a3b8;font-style:italic;margin:0;">Not the right fit? Just reply — I read every response personally.</p>`,
         p.brandColor, p,
@@ -243,7 +243,7 @@ import {
     { id:'partnership', name:'Partnership', category:'Business', icon:Handshake,
       renderHTML: (p) => wrap(
         `A collaboration opportunity from ${p.brandName}`,
-        eyebrow('LET'S BUILD TOGETHER') + heroHeadline('A partnership<br>worth exploring.') + heroSub('We believe the best outcomes are built side by side.'),
+        eyebrow("LET'S BUILD TOGETHER") + heroHeadline('A partnership<br>worth exploring.') + heroSub('We believe the best outcomes are built side by side.'),
         bodyText(p.body) +
         cta('Explore the Partnership', p.brandColor, p.ctaUrl || '#'),
         p.brandColor, p,
@@ -286,8 +286,8 @@ import {
         return wrap(
           `It's been a while — ${p.brandName} misses you`,
           eyebrow('WE MISS YOU', 'rgba(255,255,255,0.6)') +
-          heroHeadline('It's been<br>a while.', '#ffffff', '38px') +
-          heroSub('We've been building great things — come see what's new.'),
+          heroHeadline("It's been<br>a while.", '#ffffff', '38px') +
+          heroSub("We've been building great things — come see what's new."),
           bodyText(p.body) +
           cta('Come Back & Explore', purple, p.ctaUrl || '#'),
           purple, p,
