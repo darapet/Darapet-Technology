@@ -152,6 +152,11 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
         to: [{ email: to }],
         subject,
         htmlContent: html,
+        headers: {
+          'List-Unsubscribe': `<mailto:${params.fromEmail}?subject=unsubscribe>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          'Precedence': 'bulk',
+        },
       }),
     });
     if (!res.ok) {

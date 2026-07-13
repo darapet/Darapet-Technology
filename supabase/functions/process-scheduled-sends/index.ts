@@ -113,6 +113,11 @@
         body: JSON.stringify({
           sender: { name: profile.name ?? profile.email, email: profile.email },
           to: [{ email: to }], subject, htmlContent: html,
+          headers: {
+            "List-Unsubscribe": `<mailto:${profile.email}?subject=unsubscribe>`,
+            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+            "Precedence": "bulk",
+          },
         }),
       });
       return r.ok ? { ok: true } : { ok: false, error: await r.text() };
