@@ -29,7 +29,14 @@
           }
         }(window.location))
       </script>
-    </head>
+      <script>
+    /* Restore path encoded by public/404.html (GitHub Pages SPA trick) */
+    (function () {
+      var p = new URLSearchParams(window.location.search).get('p');
+      if (p) { window.history.replaceState(null, '', '/Darapet-Technology' + p + window.location.hash); }
+    })();
+    </script>
+</head>
     <body>
       <div id="root"></div>
       <script type="module" src="/src/main.tsx"></script>
