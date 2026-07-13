@@ -194,7 +194,7 @@ import {
     { id:'promotional', name:'Promotional', category:'Sales', icon:Target,
       renderHTML: (p) => wrap(
         `A special offer from ${p.brandName} — made just for you`,
-        eyebrow('EXCLUSIVE OFFER') + heroHeadline('An offer you<br>don't want<br>to miss.') + heroSub('Crafted exclusively for our subscribers. Limited time only.'),
+        eyebrow('EXCLUSIVE OFFER') + heroHeadline("An offer you<br>don't want<br>to miss.") + heroSub('Crafted exclusively for our subscribers. Limited time only.'),
         bodyText(p.body) +
         cta('Claim Your Offer', p.brandColor, p.ctaUrl || '#') +
         `<p style="text-align:center;font-family:${F};font-size:12px;color:#94a3b8;margin:8px 0 0;">Limited time · Terms apply</p>`,
