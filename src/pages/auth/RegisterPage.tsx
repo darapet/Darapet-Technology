@@ -39,7 +39,10 @@ import { useEffect, useState } from 'react';
       setLoading(true);
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { shouldCreateUser: true },
+        options: {
+          shouldCreateUser: true,
+          emailRedirectTo: 'https://darapet.github.io/Darapet-Technology/',
+        },
       });
       setLoading(false);
       if (error) { setError(error.message); return; }
@@ -49,7 +52,7 @@ import { useEffect, useState } from 'react';
     const resendLink = async () => {
       setResending(true);
       setResent(false);
-      await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+      await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: 'https://darapet.github.io/Darapet-Technology/' } });
       setResending(false);
       setResent(true);
     };
