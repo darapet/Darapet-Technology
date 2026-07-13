@@ -17,19 +17,6 @@
       <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
       <script>
-        (function(l) {
-          // Decode the 404.html SPA redirect (?p=path)
-          var p = new URLSearchParams(l.search).get('p');
-          if (p) {
-            var q = new URLSearchParams(l.search).get('q');
-            window.history.replaceState(null, null,
-              l.pathname.replace(/\/$/, '') + '/' + p.replace(/~and~/g, '&') +
-              (q ? '?' + q.replace(/~and~/g, '&') : '') + l.hash
-            );
-          }
-        }(window.location))
-      </script>
-      <script>
     /* Restore path encoded by public/404.html (GitHub Pages SPA trick) */
     (function () {
       var p = new URLSearchParams(window.location.search).get('p');
