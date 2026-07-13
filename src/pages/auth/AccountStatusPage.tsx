@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useLocation } from 'wouter';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { isExpired } from '@/lib/duration';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { CountdownTimer } from '@/components/CountdownTimer';
@@ -42,9 +44,24 @@ const THEME = {
 
 export function AccountStatusPage({ variant }: AccountStatusPageProps) {
   const { appUser, signOut, refreshProfile } = useAuth();
+  const [, navigate] = useLocation();
   const [showForm, setShowForm] = useState(false);
   const theme = THEME[variant];
   const Icon = theme.icon;
+
+  // Poll for a status change (admin reactivating the account, or a timed
+  // restriction expiring) so the user is bounced straight back into the app
+  // instead of being stuck here until they manually reload.
+  useEffect(() => {
+    const id = setInterval(() => { refreshProfile(); }, 4000);
+    return () => clearInterval(id);
+  }, [refreshProfile]);
+
+  useEffect(() => {
+    if (appUser && (appUser.status === 'active' || isExpired(appUser.restriction_expires_at))) {
+      navigate('/');
+    }
+  }, [appUser?.status, appUser?.restriction_expires_at, navigate]);
 
   let requirement: RestrictionRequirement | null = null;
   try {

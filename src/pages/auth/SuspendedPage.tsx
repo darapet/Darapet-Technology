@@ -1,7 +1,10 @@
+import { useEffect } from 'react';
+import { useLocation } from 'wouter';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { CountdownTimer } from '@/components/CountdownTimer';
+import { isExpired } from '@/lib/duration';
 import { Ban } from 'lucide-react';
 import { AccountStatusPage } from '@/pages/auth/AccountStatusPage';
 
@@ -10,7 +13,23 @@ export function SuspendedPage() {
 }
 
 export function BannedPage() {
-  const { appUser, signOut } = useAuth();
+  const { appUser, signOut, refreshProfile } = useAuth();
+  const [, navigate] = useLocation();
+
+  // Poll for a status change (admin lifting the ban, or a timed ban expiring)
+  // so the user is sent straight back into the app instead of being stuck
+  // here until they manually reload.
+  useEffect(() => {
+    const id = setInterval(() => { refreshProfile(); }, 4000);
+    return () => clearInterval(id);
+  }, [refreshProfile]);
+
+  useEffect(() => {
+    if (appUser && (appUser.status === 'active' || isExpired(appUser.restriction_expires_at))) {
+      navigate('/');
+    }
+  }, [appUser?.status, appUser?.restriction_expires_at, navigate]);
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-red-950 p-4">
       <div className="max-w-md w-full text-center space-y-6">
