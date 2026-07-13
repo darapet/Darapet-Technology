@@ -48,12 +48,12 @@ import {
     const F = `-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif`;
 
     const cta = (label: string, color: string, href = '#', light = false) =>
-    `<table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin:32px 0 8px;">
+    `<table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin:24px 0 8px;">
       <tr><td align="center">
         <table border="0" cellpadding="0" cellspacing="0">
-          <tr><td align="center" bgcolor="${color}" style="border-radius:100px;">
+          <tr><td align="center" bgcolor="${color}" style="border-radius:8px;">
             <a href="${href}" target="_blank" class="btn-full"
-              style="display:inline-block;padding:17px 48px;font-family:${F};font-size:15px;font-weight:700;color:${light ? '#000000' : '#ffffff'};text-decoration:none;border-radius:100px;letter-spacing:0.4px;white-space:nowrap;">${label} &rarr;</a>
+              style="display:inline-block;padding:11px 28px;font-family:${F};font-size:13px;font-weight:600;color:${light ? '#000000' : '#ffffff'};text-decoration:none;border-radius:8px;letter-spacing:0.3px;white-space:nowrap;">${label} &rarr;</a>
           </td></tr>
         </table>
       </td></tr>
@@ -104,8 +104,11 @@ import {
     const headerBarBg = p.headerBgOverride || opts.headerBg;
 
     const logoBlock = p.logoUrl
-      ? `<img src="${p.logoUrl}" alt="${p.brandName}" height="36"
-           style="max-height:36px;max-width:140px;object-fit:contain;display:block;">`
+      ? `<table border="0" cellpadding="0" cellspacing="0"><tr>
+           <td><img src="${p.logoUrl}" alt="${p.brandName}" height="32"
+             style="max-height:32px;max-width:120px;object-fit:contain;display:block;"></td>
+           <td style="padding-left:10px;"><span style="font-family:${F};font-size:14px;font-weight:800;color:#0f172a;letter-spacing:-0.3px;">${p.brandName}</span></td>
+         </tr></table>`
       : `<span style="font-family:${F};font-size:15px;font-weight:800;color:#0f172a;letter-spacing:-0.3px;">${p.brandName}</span>`;
 
     const greeting = p.recipientName && p.recipientName !== '{{First Name}}'

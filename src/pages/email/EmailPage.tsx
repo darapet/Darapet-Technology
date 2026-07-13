@@ -47,6 +47,7 @@ export function EmailPage() {
   const [headerColor, setHeaderColor] = useState('');
   const [footerColor, setFooterColor] = useState('');
   const [bodyBgColor, setBodyBgColor] = useState('');
+  const [ctaUrl, setCtaUrl] = useState('');
   const abortRef = useRef(false);
 
   useEffect(() => {
@@ -145,6 +146,7 @@ export function EmailPage() {
           headerBgOverride: headerColor || undefined,
           footerBgOverride: footerColor || undefined,
           emailBgColor: bodyBgColor || undefined,
+          ctaUrl: ctaUrl || undefined,
           subject,
           body,
           signatureUrl,
@@ -287,6 +289,15 @@ export function EmailPage() {
                   className="bg-muted/50 min-h-[180px] resize-none" />
               </div>
 
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1">Button Link <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
+                <Input value={ctaUrl} onChange={e => setCtaUrl(e.target.value)}
+                  placeholder="https://your-site.com/offer"
+                  type="url"
+                  className="bg-muted/50" />
+                <p className="text-xs text-muted-foreground">The URL the call-to-action button points to.</p>
+              </div>
+
               <div className="flex items-center justify-between py-1">
                 <div className="flex items-center gap-2">
                   <Image className="w-4 h-4 text-muted-foreground" />
@@ -340,6 +351,7 @@ export function EmailPage() {
                     headerBgOverride: headerColor || undefined,
                     footerBgOverride: footerColor || undefined,
                     emailBgColor: bodyBgColor || undefined,
+                    ctaUrl: ctaUrl || undefined,
                     subject: subject || 'Your Subject Line',
                     body: body || 'Your email body will appear here...',
                     signatureUrl: includeSignature ? profile?.signature_url || null : null,
