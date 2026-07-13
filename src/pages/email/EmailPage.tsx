@@ -44,6 +44,9 @@ export function EmailPage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [groqKey, setGroqKey] = useState('');
   const [aiPrompt, setAiPrompt] = useState('');
+  const [headerColor, setHeaderColor] = useState('');
+  const [footerColor, setFooterColor] = useState('');
+  const [bodyBgColor, setBodyBgColor] = useState('');
   const abortRef = useRef(false);
 
   useEffect(() => {
@@ -139,6 +142,9 @@ export function EmailPage() {
           brandName: profile?.company || 'Darapet',
           logoUrl: profile?.logo_url || '',
           brandColor: profile?.brand_color || '#3B82F6',
+          headerBgOverride: headerColor || undefined,
+          footerBgOverride: footerColor || undefined,
+          emailBgColor: bodyBgColor || undefined,
           subject,
           body,
           signatureUrl,
@@ -212,6 +218,37 @@ export function EmailPage() {
                     <p className="text-muted-foreground text-xs">{t.category}</p>
                   </button>
                 ))}
+              </div>
+
+              {/* Colour overrides */}
+              <div className="mt-4 pt-4 border-t space-y-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Colour overrides</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Header</Label>
+                    <div className="flex items-center gap-2">
+                      <input type="color" value={headerColor || '#3B82F6'} onChange={e => setHeaderColor(e.target.value)}
+                        className="w-8 h-8 rounded cursor-pointer border border-border p-0.5 bg-transparent" />
+                      <button onClick={() => setHeaderColor('')} className="text-xs text-muted-foreground hover:text-foreground">reset</button>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Footer</Label>
+                    <div className="flex items-center gap-2">
+                      <input type="color" value={footerColor || '#0F172A'} onChange={e => setFooterColor(e.target.value)}
+                        className="w-8 h-8 rounded cursor-pointer border border-border p-0.5 bg-transparent" />
+                      <button onClick={() => setFooterColor('')} className="text-xs text-muted-foreground hover:text-foreground">reset</button>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Content BG</Label>
+                    <div className="flex items-center gap-2">
+                      <input type="color" value={bodyBgColor || '#F1F5F9'} onChange={e => setBodyBgColor(e.target.value)}
+                        className="w-8 h-8 rounded cursor-pointer border border-border p-0.5 bg-transparent" />
+                      <button onClick={() => setBodyBgColor('')} className="text-xs text-muted-foreground hover:text-foreground">reset</button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -300,6 +337,9 @@ export function EmailPage() {
                     brandName: profile?.company || 'Your Brand',
                     logoUrl: profile?.logo_url || '',
                     brandColor: profile?.brand_color || '#3B82F6',
+                    headerBgOverride: headerColor || undefined,
+                    footerBgOverride: footerColor || undefined,
+                    emailBgColor: bodyBgColor || undefined,
                     subject: subject || 'Your Subject Line',
                     body: body || 'Your email body will appear here...',
                     signatureUrl: includeSignature ? profile?.signature_url || null : null,

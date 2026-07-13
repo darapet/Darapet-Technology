@@ -7,7 +7,7 @@ import {
 
     interface TemplateProps {
     brandName: string; logoUrl: string; brandColor: string;
-    emailBgColor?: string; headerBgOverride?: string;
+    emailBgColor?: string; headerBgOverride?: string; footerBgOverride?: string;
     subject: string; body: string; signatureUrl: string | null;
     recipientName: string; socialLinks?: SocialLink[];
     websiteUrl?: string; ctaUrl?: string;
@@ -99,7 +99,7 @@ import {
     opts: { headerBg: string; outerBg?: string; footerBg?: string }
     ): string {
     const outerBg = p.emailBgColor || opts.outerBg || '#F1F5F9';
-    const footerBg = opts.footerBg || '#0F172A';
+    const footerBg = p.footerBgOverride || opts.footerBg || '#0F172A';
     const socialRow = renderSocialRow(p.socialLinks ?? [], p.websiteUrl);
     const headerBarBg = p.headerBgOverride || opts.headerBg;
 
