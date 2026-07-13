@@ -36,8 +36,20 @@ export function RegisterPage() {
 
     const userId = data.user?.id;
     if (userId) {
+      const trimmedName = name.trim();
       // Save the name immediately so the app knows this user is onboarded later
-      await supabase.from('profiles').upsert({ id: userId, name: name.trim(), email }, { onConflict: 'id' });
+      await supabase.from('profiles').upsert({ id: userId, name: trimmedName, email }, { onConflict: 'id' });
+
+      // Also create the app_users row so the admin dashboard/user list picks
+      // up the new signup right away — this used to only happen at the end
+      // of the (now-removed) onboarding wizard.
+      await supabase.from('app_users').upsert({
+        auth_user_id: userId,
+        email,
+        first_name: trimmedName.split(' ')[0] || trimmedName,
+        last_name: trimmedName.split(' ').slice(1).join(' ') || '',
+        status: 'active',
+      }, { onConflict: 'auth_user_id' });
     }
 
     setLoading(false);
