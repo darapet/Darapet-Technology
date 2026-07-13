@@ -1,178 +1,156 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'wouter';
-import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/context/AuthContext';
-import { useToast } from '@/hooks/use-toast';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Clock, Plus, Trash2, CheckCircle2, AlertCircle, RefreshCw, Mail } from 'lucide-react';
+    import { Link } from 'wouter';
+    import { supabase } from '@/lib/supabase';
+    import { useAuth } from '@/context/AuthContext';
+    import { useToast } from '@/hooks/use-toast';
+    import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    import { Button } from '@/components/ui/button';
+    import { Badge } from '@/components/ui/badge';
+    import { Skeleton } from '@/components/ui/skeleton';
+    import { Clock, Plus, Trash2, CheckCircle2, AlertCircle, RefreshCw, Mail } from 'lucide-react';
 
-interface ScheduledSend {
-  id: string;
-  subject: string;
-  recipients: string[];
-  status: 'scheduled' | 'sent' | 'failed' | 'cancelled';
-  scheduled_at: string;
-  created_at: string;
-}
-
-const STATUS_STYLE: Record<string, string> = {
-  scheduled: 'bg-amber-500/10 text-amber-600 border-amber-200',
-  sent: 'bg-green-500/10 text-green-600 border-green-200',
-  failed: 'bg-red-500/10 text-red-600 border-red-200',
-  cancelled: 'bg-gray-500/10 text-gray-500 border-gray-200',
-};
-
-const STATUS_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
-  scheduled: Clock,
-  sent: CheckCircle2,
-  failed: AlertCircle,
-  cancelled: Mail,
-};
-
-export function AutomationPage() {
-  const { user } = useAuth();
-  const { toast } = useToast();
-  const [schedules, setSchedules] = useState<ScheduledSend[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [cancelling, setCancelling] = useState<string | null>(null);
-
-  const load = async () => {
-    if (!user) return;
-    const { data } = await supabase
-      .from('scheduled_sends')
-      .select('id, subject, recipients, status, scheduled_at, created_at')
-      .eq('user_id', user.id)
-      .order('scheduled_at', { ascending: false })
-      .limit(100);
-    setSchedules((data || []) as ScheduledSend[]);
-    setLoading(false);
-  };
-
-  useEffect(() => { load(); }, [user]);
-
-  const cancelSchedule = async (id: string) => {
-    setCancelling(id);
-    const { error } = await supabase
-      .from('scheduled_sends')
-      .update({ status: 'cancelled' })
-      .eq('id', id)
-      .eq('user_id', user!.id);
-    if (error) {
-      toast({ variant: 'destructive', title: 'Failed to cancel' });
-    } else {
-      setSchedules(prev => prev.map(s => s.id === id ? { ...s, status: 'cancelled' } : s));
-      toast({ title: 'Cancelled', description: 'Scheduled send has been cancelled.' });
+    interface ScheduledCampaign {
+    id: string; subject: string; recipients: string[];
+    status: 'scheduled' | 'sent' | 'failed' | 'cancelled' | 'sending';
+    scheduled_at: string; created_at: string;
     }
-    setCancelling(null);
-  };
 
-  const upcoming = schedules.filter(s => s.status === 'scheduled');
-  const past = schedules.filter(s => s.status !== 'scheduled');
+    const STATUS_STYLE: Record<string, string> = {
+    scheduled: 'bg-amber-500/10 text-amber-600 border-amber-200',
+    sending:   'bg-blue-500/10 text-blue-600 border-blue-200',
+    sent:      'bg-green-500/10 text-green-600 border-green-200',
+    failed:    'bg-red-500/10 text-red-600 border-red-200',
+    cancelled: 'bg-gray-500/10 text-gray-500 border-gray-200',
+    };
+    const STATUS_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
+    scheduled: Clock, sending: RefreshCw, sent: CheckCircle2, failed: AlertCircle, cancelled: Mail,
+    };
 
-  if (loading) {
-    return (
+    export function AutomationPage() {
+    const { user } = useAuth();
+    const { toast } = useToast();
+    const [campaigns, setCampaigns] = useState<ScheduledCampaign[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [cancelling, setCancelling] = useState<string | null>(null);
+
+    const load = async () => {
+      if (!user) return;
+      const { data } = await supabase
+        .from('campaigns')
+        .select('id, subject, recipients, status, scheduled_at, created_at')
+        .eq('user_id', user.id)
+        .in('status', ['scheduled', 'sending', 'sent', 'failed', 'cancelled'])
+        .not('scheduled_at', 'is', null)
+        .order('scheduled_at', { ascending: false })
+        .limit(100);
+      setCampaigns((data || []) as ScheduledCampaign[]);
+      setLoading(false);
+    };
+
+    useEffect(() => { load(); }, [user]);
+
+    const cancelCampaign = async (id: string) => {
+      setCancelling(id);
+      const { error } = await supabase
+        .from('campaigns')
+        .update({ status: 'cancelled' })
+        .eq('id', id).eq('user_id', user!.id).eq('status', 'scheduled');
+      if (error) {
+        toast({ variant: 'destructive', title: 'Failed to cancel' });
+      } else {
+        setCampaigns(prev => prev.map(c => c.id === id ? { ...c, status: 'cancelled' } : c));
+        toast({ title: 'Cancelled', description: 'Scheduled campaign cancelled.' });
+      }
+      setCancelling(null);
+    };
+
+    const upcoming = campaigns.filter(c => c.status === 'scheduled' || c.status === 'sending');
+    const past     = campaigns.filter(c => c.status !== 'scheduled' && c.status !== 'sending');
+
+    if (loading) return (
       <div className="max-w-3xl mx-auto space-y-6">
         <Skeleton className="h-8 w-56" />
-        <div className="space-y-3">{[1, 2, 3].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}</div>
+        {[1,2,3].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}
       </div>
     );
-  }
 
-  return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Automation</h1>
-          <p className="text-muted-foreground mt-1">Manage scheduled campaigns</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="icon" onClick={load} title="Refresh">
-            <RefreshCw className="w-4 h-4" />
-          </Button>
-          <Link href="/campaigns/new">
-            <Button className="gap-1.5"><Plus className="w-4 h-4" /> Schedule Campaign</Button>
-          </Link>
-        </div>
-      </div>
-
-      {/* Upcoming */}
-      <div className="space-y-3">
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
-          <Clock className="w-3.5 h-3.5" /> Upcoming ({upcoming.length})
-        </h2>
-        {upcoming.length === 0 ? (
-          <Card>
-            <CardContent className="py-10 text-center space-y-3">
-              <Clock className="w-8 h-8 mx-auto text-muted-foreground/40" />
-              <p className="text-sm text-muted-foreground">No scheduled campaigns.</p>
-              <Link href="/campaigns/new">
-                <Button size="sm" variant="outline" className="gap-1.5">
-                  <Plus className="w-3.5 h-3.5" /> Schedule one now
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-        ) : (
-          upcoming.map(s => <ScheduleRow key={s.id} s={s} onCancel={() => cancelSchedule(s.id)} cancelling={cancelling === s.id} />)
-        )}
-      </div>
-
-      {/* Past */}
-      {past.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Past ({past.length})</h2>
-          {past.map(s => <ScheduleRow key={s.id} s={s} onCancel={() => cancelSchedule(s.id)} cancelling={cancelling === s.id} />)}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ScheduleRow({ s, onCancel, cancelling }: { s: ScheduledSend; onCancel: () => void; cancelling: boolean }) {
-  const Icon = STATUS_ICON[s.status] || Clock;
-  const isScheduled = s.status === 'scheduled';
-  const recipientCount = s.recipients?.length ?? 0;
-  const sendDate = new Date(s.scheduled_at);
-  const isPast = sendDate < new Date();
-
-  return (
-    <Card>
-      <CardContent className="py-4 px-4">
-        <div className="flex items-start gap-4">
-          <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${STATUS_STYLE[s.status]}`}>
-            <Icon className="w-4 h-4" />
+    const CampaignRow = ({ c }: { c: ScheduledCampaign }) => {
+      const Icon = STATUS_ICON[c.status] ?? Mail;
+      const canCancel = c.status === 'scheduled';
+      return (
+        <div className="flex items-center gap-4 p-4 rounded-xl border border-border/60 bg-card hover:bg-muted/30 transition-colors">
+          <div className="shrink-0 w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
+            <Icon className="w-4 h-4 text-muted-foreground" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-2">
-              <p className="font-medium text-sm truncate">{s.subject || '(no subject)'}</p>
-              <Badge className={`text-xs border shrink-0 ${STATUS_STYLE[s.status]}`}>{s.status}</Badge>
-            </div>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
-              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <Clock className="w-3 h-3" />
-                {sendDate.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-                {isPast && isScheduled && <span className="text-amber-500 ml-1">(overdue)</span>}
-              </span>
-              <span className="text-xs text-muted-foreground">{recipientCount} recipient{recipientCount !== 1 ? 's' : ''}</span>
-            </div>
+            <p className="font-medium text-sm truncate">{c.subject}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {c.status === 'scheduled' || c.status === 'sending'
+                ? `Sends ${new Date(c.scheduled_at).toLocaleString()}`
+                : `Sent ${new Date(c.scheduled_at).toLocaleString()}`}
+              {' · '}{Array.isArray(c.recipients) ? c.recipients.length : 0} recipient{Array.isArray(c.recipients) && c.recipients.length !== 1 ? 's' : ''}
+            </p>
           </div>
-          {isScheduled && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onCancel}
-              disabled={cancelling}
-              className="shrink-0 text-muted-foreground hover:text-destructive"
-              title="Cancel schedule"
-            >
-              {cancelling ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+          <Badge variant="outline" className={`text-xs shrink-0 ${STATUS_STYLE[c.status]}`}>
+            {c.status}
+          </Badge>
+          {canCancel && (
+            <Button variant="ghost" size="icon" className="shrink-0 text-muted-foreground hover:text-destructive"
+              onClick={() => cancelCampaign(c.id)} disabled={cancelling === c.id}>
+              <Trash2 className="w-4 h-4" />
             </Button>
           )}
         </div>
-      </CardContent>
-    </Card>
-  );
-}
+      );
+    };
+
+    return (
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Automation</h1>
+            <p className="text-sm text-muted-foreground mt-1">Scheduled campaigns are sent automatically at the set time</p>
+          </div>
+          <Link href="/campaigns/new">
+            <Button size="sm" className="gap-1.5"><Plus className="w-4 h-4" /> Schedule New</Button>
+          </Link>
+        </div>
+
+        {/* Upcoming */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Clock className="w-4 h-4 text-amber-500" />
+              Upcoming
+              {upcoming.length > 0 && <Badge variant="secondary" className="ml-auto">{upcoming.length}</Badge>}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {upcoming.length === 0
+              ? <div className="text-center py-8 text-muted-foreground">
+                  <Clock className="w-8 h-8 mx-auto mb-3 opacity-30" />
+                  <p className="text-sm">No upcoming campaigns</p>
+                  <p className="text-xs mt-1">Schedule a campaign from the New Campaign page</p>
+                </div>
+              : <div className="space-y-2">{upcoming.map(c => <CampaignRow key={c.id} c={c} />)}</div>
+            }
+          </CardContent>
+        </Card>
+
+        {/* History */}
+        {past.length > 0 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-500" /> History
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">{past.map(c => <CampaignRow key={c.id} c={c} />)}</div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    );
+    }
+    
