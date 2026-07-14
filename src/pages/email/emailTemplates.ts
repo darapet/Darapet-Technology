@@ -20,14 +20,17 @@ import {
     renderHTML: (props: TemplateProps) => string;
     }
 
-    const EMAIL_SOCIAL_ICONS: Record<string, { color: string; label: string; path: string }> = {
-    website:   { color: '#6B7280', label: 'Website',   path: 'M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95a15.65 15.65 0 0 0-1.38-3.56A8.03 8.03 0 0 1 18.92 8zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2 0 .68.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.987 7.987 0 0 1 5.08 16zm2.95-8H5.08a7.987 7.987 0 0 1 4.33-3.56A15.65 15.65 0 0 0 8.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2 0-.68.07-1.35.16-2h4.68c.09.65.16 1.32.16 2 0 .68-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95a8.03 8.03 0 0 1-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2 0-.68-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z' },
-    linkedin:  { color: '#0A66C2', label: 'LinkedIn',  path: 'M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.32 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.79M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z' },
-    instagram: { color: '#E4405F', label: 'Instagram', path: 'M7.8 2h8.4C19.4 2 22 4.6 22 7.8v8.4a5.8 5.8 0 0 1-5.8 5.8H7.8C4.6 22 2 19.4 2 16.2V7.8A5.8 5.8 0 0 1 7.8 2m-.2 2A3.6 3.6 0 0 0 4 7.6v8.8C4 18.39 5.61 20 7.6 20h8.8a3.6 3.6 0 0 0 3.6-3.6V7.6C20 5.61 18.39 4 16.4 4H7.6m9.65 1.5a1.25 1.25 0 0 1 1.25 1.25A1.25 1.25 0 0 1 17.25 8 1.25 1.25 0 0 1 16 6.75a1.25 1.25 0 0 1 1.25-1.25M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3z' },
-    facebook:  { color: '#1877F2', label: 'Facebook',  path: 'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2m13 2h-2.5A3.5 3.5 0 0 0 12 8.5V11h-2v3h2v7h3v-7h3v-3h-3V9a1 1 0 0 1 1-1h2V5z' },
-    twitter:   { color: '#000000', label: 'X/Twitter', path: 'M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z' },
-    youtube:   { color: '#FF0000', label: 'YouTube',   path: 'M10 15l5.19-3L10 9v6m11.56-7.83c.13.47.22 1.1.28 1.9.07.8.1 1.49.1 2.09L22 12c0 2.19-.16 3.8-.44 4.83-.25.9-.83 1.48-1.73 1.73-.47.13-1.33.22-2.65.28-1.3.07-2.49.1-3.59.1L12 19c-4.19 0-6.8-.16-7.83-.44-.9-.25-1.48-.83-1.73-1.73-.13-.47-.22-1.1-.28-1.9-.07-.8-.1-1.49-.1-2.09L2 12c0-2.19.16-3.8.44-4.83.25-.9.83-1.48 1.73-1.73.47-.13 1.33-.22 2.65-.28 1.3-.07 2.49-.1 3.59-.1L12 5c4.19 0 6.8.16 7.83.44.9.25 1.48.83 1.73 1.73z' },
-    tiktok:    { color: '#000000', label: 'TikTok',    path: 'M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.5 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.28 0 .54.04.79.1V9.01a6.29 6.29 0 0 0-.79-.05 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.33-6.34l.04-8.37A8.17 8.17 0 0 0 21 8.26V4.83a4.85 4.85 0 0 1-1.41.18z' },
+    // Social platform brand colours and short labels used for the pill buttons.
+    // No SVG / data-URI images — those are blocked by Gmail, Outlook, and most
+    // email clients. Pure HTML table cells work everywhere.
+    const EMAIL_SOCIAL_ICONS: Record<string, { color: string; label: string }> = {
+    website:   { color: '#6B7280', label: '🌐 Website'   },
+    linkedin:  { color: '#0A66C2', label: 'in LinkedIn'  },
+    instagram: { color: '#E4405F', label: '📷 Instagram' },
+    facebook:  { color: '#1877F2', label: 'f Facebook'   },
+    twitter:   { color: '#000000', label: '𝕏 Twitter'    },
+    youtube:   { color: '#FF0000', label: '▶ YouTube'    },
+    tiktok:    { color: '#000000', label: '♪ TikTok'     },
     };
 
     function renderSocialRow(links: SocialLink[], websiteUrl?: string): string {
@@ -35,13 +38,14 @@ import {
     if (websiteUrl) all.push({ platform: 'website', url: websiteUrl });
     if (links) all.push(...links);
     if (all.length === 0) return '';
+    // Pill-button links — no images, no data URIs. Works in Gmail, Outlook,
+    // Apple Mail, and every other client that blocks external/inline images.
     const badges = all.map(({ platform, url }) => {
       const cfg = EMAIL_SOCIAL_ICONS[platform];
       if (!cfg || !url) return '';
-      const { color, label, path } = cfg;
-      const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 36 36'><rect width='36' height='36' rx='10' fill='${color}'/><g transform='translate(6,6)'><svg width='24' height='24' viewBox='0 0 24 24'><path fill='white' d='${path}'/></svg></g></svg>`;
-      const uri = `data:image/svg+xml,${encodeURIComponent(svg)}`;
-      return `<a href="${url}" target="_blank" style="display:inline-block;margin:0 5px;text-decoration:none;"><img src="${uri}" width="36" height="36" alt="${label}" border="0" style="display:block;border-radius:10px;"></a>`;
+      const { color, label } = cfg;
+      return `<a href="${url}" target="_blank"
+        style="display:inline-block;margin:0 4px 6px;padding:7px 14px;background:${color};border-radius:20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:11px;font-weight:600;color:#ffffff;text-decoration:none;letter-spacing:0.3px;">${label}</a>`;
     }).join('');
     return badges;
     }
