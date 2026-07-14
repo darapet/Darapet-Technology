@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+    <html lang="en">
+    <head>
+    <meta charset="utf-8">
+    <title>Darapet</title>
+    <script>
+    (function () {
+      var base = '/Darapet-Technology';
+      var path = window.location.pathname.slice(base.length) || '/';
+      var search = window.location.search;
+      var hash = window.location.hash; // Supabase tokens live in the hash — preserve them
+      window.location.replace(base + '/?p=' + encodeURIComponent(path + search) + hash);
+    })();
+    </script>
+    </head>
+    <body></body>
+    </html>
