@@ -4,12 +4,13 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
-import { LayoutDashboard, Mail, Settings, LogOut, ShieldCheck, Menu, X, Plus, History, Zap } from 'lucide-react';
+import { LayoutDashboard, Mail, Settings, LogOut, ShieldCheck, Menu, X, Plus, History, Zap, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard, exact: true },
+  { href: '/scouting', label: 'Scouting', icon: Search },
   { href: '/campaigns', label: 'Campaigns', icon: Mail },
   { href: '/campaigns/history', label: 'History', icon: History },
   { href: '/campaigns/automation', label: 'Automation', icon: Zap },
