@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
-import { LayoutDashboard, Mail, Settings, LogOut, ShieldCheck, Menu, X, Plus, History, Zap } from 'lucide-react';
+import { LayoutDashboard, Mail, Settings, LogOut, ShieldCheck, Menu, X, Plus, History, Zap, Megaphone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
 
@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: '/campaigns', label: 'Campaigns', icon: Mail },
   { href: '/campaigns/history', label: 'History', icon: History },
   { href: '/campaigns/automation', label: 'Automation', icon: Zap },
+  { href: '/scouting', label: 'Scouting', icon: Megaphone },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 

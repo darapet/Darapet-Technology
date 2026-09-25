@@ -23,6 +23,7 @@ import { CampaignsPage } from '@/pages/campaigns/CampaignsPage';
 import { NewCampaignPage } from '@/pages/campaigns/NewCampaignPage';
 import { CampaignHistoryPage } from '@/pages/campaigns/CampaignHistoryPage';
 import { AutomationPage } from '@/pages/campaigns/AutomationPage';
+import { ScoutingPage } from '@/pages/ScoutingPage';
 
 // Admin pages
 import { AdminLayout } from '@/pages/admin/AdminLayout';
@@ -126,6 +127,12 @@ function AppRoutes() {
       <Route path="/campaigns/automation">
         <ProtectedRoute>
           <AppLayout><AutomationPage /></AppLayout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/scouting">
+        <ProtectedRoute>
+          <AppLayout><ScoutingPage /></AppLayout>
         </ProtectedRoute>
       </Route>
 
