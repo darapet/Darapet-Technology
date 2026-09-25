@@ -17,6 +17,7 @@ import { detectSmtpPreset, type SmtpPreset } from '@/lib/emailSend';
 import { SOCIAL_PLATFORMS, SOCIAL_CATEGORIES } from '@/data/socialMedia';
 import { SocialIcon } from '@/data/socialIcons';
 import type { SocialLink } from '@/pages/email/emailTemplates';
+import type { Json } from '@/types/database';
 
 // ─── Cloudinary ───────────────────────────────────────────────────────────────
 
@@ -316,7 +317,7 @@ export function SettingsPage() {
     if (profile.signature_url) setSigPreview(profile.signature_url);
     // Load social links
     const raw = profile.social_links;
-    if (Array.isArray(raw)) setSocialLinks(raw as SocialLink[]);
+    if (Array.isArray(raw)) setSocialLinks(raw as unknown as SocialLink[]);
     if (profile.website_url) setWebsiteUrl(profile.website_url);
   }, [profile]);
 
@@ -392,7 +393,7 @@ export function SettingsPage() {
         smtp_pass: form.smtp_pass,
         smtp_secure: form.smtp_secure,
         active_smtp: form.active_smtp,
-        social_links: socialLinks,
+        social_links: socialLinks as unknown as Json,
         website_url: websiteUrl || null,
         updated_at: new Date().toISOString(),
       });
