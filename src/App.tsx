@@ -23,6 +23,7 @@ import { CampaignsPage } from '@/pages/campaigns/CampaignsPage';
 import { NewCampaignPage } from '@/pages/campaigns/NewCampaignPage';
 import { CampaignHistoryPage } from '@/pages/campaigns/CampaignHistoryPage';
 import { AutomationPage } from '@/pages/campaigns/AutomationPage';
+import { ScoutingPage } from '@/pages/scouting/ScoutingPage';
 
 // Admin pages
 import { AdminLayout } from '@/pages/admin/AdminLayout';
@@ -107,6 +108,12 @@ function AppRoutes() {
         </ProtectedRoute>
       </Route>
 
+      <Route path="/scouting">
+        <ProtectedRoute>
+          <AppLayout><ScoutingPage /></AppLayout>
+        </ProtectedRoute>
+      </Route>
+
       {/* Campaign routes */}
       <Route path="/campaigns">
         <ProtectedRoute>
@@ -150,7 +157,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
-          <WouterRouter base="/Darapet-Technology">
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
             <AppRoutes />
           </WouterRouter>
           <Toaster />
