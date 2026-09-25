@@ -9,6 +9,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { hasUsableEmailProvider, sendEmail } from '@/lib/emailSend';
+import { disconnectGmail, getGmailStatus, sendGmail, startGmailConnection, type GmailStatus } from '@/lib/gmail';
 import { parseAiJson, extractLeadsFromFile, toHtmlEmail, type ScoutLead } from '@/lib/scouting';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -66,6 +67,10 @@ export function ScoutingPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'needs_review' | 'ready' | 'opted_out'>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [gmailStatus, setGmailStatus] = useState<GmailStatus>({ connected: false, email: null, connectedAt: null });
+  const [gmailLoading, setGmailLoading] = useState(true);
+  const [gmailAction, setGmailAction] = useState(false);
+  const [gmailError, setGmailError] = useState('');
   const [researchPrompt, setResearchPrompt] = useState(
     'Review the website and identify one specific opportunity where a freelance technology partner could help. Be factual, concise, and do not invent details.'
   );
@@ -84,6 +89,30 @@ export function ScoutingPage() {
     };
     load();
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    getGmailStatus()
+      .then(status => {
+        setGmailStatus(status);
+        setGmailError('');
+      })
+      .catch(error => setGmailError(error instanceof Error ? error.message : 'Gmail connection is not available yet.'))
+      .finally(() => setGmailLoading(false));
+  }, [user]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get('gmail');
+    if (!result) return;
+    window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`);
+    if (result === 'connected') {
+      toast({ title: 'Gmail connected', description: 'Scouting messages will now send from your connected Gmail account.' });
+      getGmailStatus().then(setGmailStatus).catch(() => undefined);
+    } else {
+      toast({ variant: 'destructive', title: 'Gmail connection was not completed', description: 'Check the Google consent screen and try again.' });
+    }
+  }, [toast]);
 
   const updateLocalLead = (id: string, patch: Partial<ScoutLead>) => {
     setLeads(current => current.map(lead => lead.id === id ? { ...lead, ...patch } : lead));
@@ -118,6 +147,30 @@ export function ScoutingPage() {
   };
 
   const aiKey = profile?.groq_api_key || groqKey;
+
+  const connectGmail = async () => {
+    setGmailAction(true);
+    try {
+      await startGmailConnection();
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Could not start Gmail connection', description: error instanceof Error ? error.message : 'Try again.' });
+      setGmailAction(false);
+    }
+  };
+
+  const disconnectConnectedGmail = async () => {
+    if (!window.confirm('Disconnect this Gmail account from Darapet?')) return;
+    setGmailAction(true);
+    try {
+      await disconnectGmail();
+      setGmailStatus({ connected: false, email: null, connectedAt: null });
+      toast({ title: 'Gmail disconnected' });
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Could not disconnect Gmail', description: error instanceof Error ? error.message : 'Try again.' });
+    } finally {
+      setGmailAction(false);
+    }
+  };
 
   const callGroq = async <T,>(prompt: string): Promise<T> => {
     if (!aiKey) throw new Error('Add a Groq API key in Admin Settings before using AI research.');
@@ -250,12 +303,16 @@ If you would rather not receive messages from me, reply "unsubscribe" and I will
     }
     if (!window.confirm(`Send ${targets.length} reviewed message${targets.length === 1 ? '' : 's'} now? Opted-out leads are excluded.`)) return;
 
-    const { data: provider } = await db.from('profiles')
-      .select('brevo_api_key, active_smtp, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure')
-      .eq('id', user!.id).single();
-    if (!provider || !hasUsableEmailProvider(provider)) {
-      toast({ variant: 'destructive', title: 'No email provider configured', description: 'Connect Brevo or SMTP in Settings first.' });
-      return;
+    let provider: any = null;
+    if (!gmailStatus.connected) {
+      const { data } = await db.from('profiles')
+        .select('brevo_api_key, active_smtp, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_secure')
+        .eq('id', user!.id).single();
+      provider = data;
+      if (!provider || !hasUsableEmailProvider(provider)) {
+        toast({ variant: 'destructive', title: 'No email provider configured', description: 'Connect Gmail here, or configure Brevo/SMTP in Settings.' });
+        return;
+      }
     }
 
     setSending(true);
@@ -271,31 +328,49 @@ If you would rather not receive messages from me, reply "unsubscribe" and I will
     let sent = 0;
     for (const [index, lead] of targets.entries()) {
       updateLocalLead(lead.id, { send_status: 'sending' });
-      const result = await sendEmail({
-        config: provider,
-        fromName: profile?.name || 'Darapet',
-        fromEmail: profile?.email || user!.email!,
-        to: lead.email,
-        subject: lead.email_subject,
-        html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">${toHtmlEmail(lead.email_body)}</div>`,
-      });
+      let sendOk = false;
+      let sendError = '';
+      try {
+        if (gmailStatus.connected) {
+          const result = await sendGmail({
+            fromName: profile?.name || 'Darapet',
+            to: lead.email,
+            subject: lead.email_subject,
+            html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">${toHtmlEmail(lead.email_body)}</div>`,
+          });
+          sendOk = result.success;
+        } else {
+          const result = await sendEmail({
+            config: provider,
+            fromName: profile?.name || 'Darapet',
+            fromEmail: profile?.email || user!.email!,
+            to: lead.email,
+            subject: lead.email_subject,
+            html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">${toHtmlEmail(lead.email_body)}</div>`,
+          });
+          sendOk = result.ok;
+          sendError = result.error || '';
+        }
+      } catch (error) {
+        sendError = error instanceof Error ? error.message : 'Send failed';
+      }
       await db.from('email_sends').insert({
         user_id: user!.id,
         campaign_id: campaign?.id || null,
         lead_id: lead.id,
         to_email: lead.email,
         subject: lead.email_subject,
-        provider: provider.active_smtp === 'smtp' ? 'smtp' : 'brevo',
-        status: result.ok ? 'sent' : 'failed',
-        error_msg: result.error || null,
+        provider: gmailStatus.connected ? 'gmail' : provider.active_smtp === 'smtp' ? 'smtp' : 'brevo',
+        status: sendOk ? 'sent' : 'failed',
+        error_msg: sendError || null,
         sent_at: new Date().toISOString(),
       });
       await db.from('scout_leads').update({
-        send_status: result.ok ? 'sent' : 'failed',
-        sent_at: result.ok ? new Date().toISOString() : null,
+        send_status: sendOk ? 'sent' : 'failed',
+        sent_at: sendOk ? new Date().toISOString() : null,
       }).eq('id', lead.id).eq('user_id', user!.id);
-      updateLocalLead(lead.id, { send_status: result.ok ? 'sent' : 'failed', sent_at: result.ok ? new Date().toISOString() : null });
-      if (result.ok) sent += 1;
+      updateLocalLead(lead.id, { send_status: sendOk ? 'sent' : 'failed', sent_at: sendOk ? new Date().toISOString() : null });
+      if (sendOk) sent += 1;
       setSendProgress(Math.round(((index + 1) / targets.length) * 100));
     }
     if (campaign?.id) {
@@ -348,6 +423,24 @@ If you would rather not receive messages from me, reply "unsubscribe" and I will
           <Link href="/campaigns/history"><Button variant="outline" className="gap-2"><Mail className="w-4 h-4" /> Campaign history</Button></Link>
         </div>
       </div>
+
+      <Card className={gmailStatus.connected ? 'border-green-200 bg-green-500/[0.03]' : 'border-primary/20 bg-primary/[0.03]'}>
+        <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${gmailStatus.connected ? 'bg-green-500/10 text-green-600' : 'bg-primary/10 text-primary'}`}>
+              <Mail className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="font-semibold flex items-center gap-2">Send from Gmail {gmailStatus.connected && <Badge variant="outline" className="text-green-600 border-green-200">Connected</Badge>}</p>
+              {gmailLoading ? <p className="text-sm text-muted-foreground mt-1">Checking connection…</p> : gmailStatus.connected ? <p className="text-sm text-muted-foreground mt-1">{gmailStatus.email} will be used for reviewed scouting sends.</p> : <p className="text-sm text-muted-foreground mt-1">Connect a mailbox so messages send from the owner’s own Gmail account.</p>}
+              {gmailError && <p className="text-xs text-amber-600 mt-1">{gmailError}</p>}
+            </div>
+          </div>
+          {gmailStatus.connected
+            ? <Button variant="outline" size="sm" onClick={disconnectConnectedGmail} disabled={gmailAction} className="shrink-0">{gmailAction ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />} Disconnect</Button>
+            : <Button size="sm" onClick={connectGmail} disabled={gmailAction || gmailLoading} className="gap-1.5 shrink-0">{gmailAction ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />} Connect Gmail</Button>}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {([
