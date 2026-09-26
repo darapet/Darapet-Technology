@@ -40,7 +40,7 @@ export function RegisterPage() {
     }
 
     setLoading(false);
-    setLocation('/settings');
+    setLocation('/dashboard');
   };
 
   const handleResendOtp = async () => {
@@ -100,16 +100,16 @@ export function RegisterPage() {
       return;
     }
 
-    if (otpData?.enabled) {
-      setRegisteredUserId(userId);
-      setVerificationEmail(email);
-      setVerificationStep(true);
+    if (!otpData?.enabled) {
+      setError('Verification code delivery is not enabled. Please contact an administrator before continuing.');
       setLoading(false);
       return;
     }
 
+    setRegisteredUserId(userId);
+    setVerificationEmail(email);
+    setVerificationStep(true);
     setLoading(false);
-    setLocation('/settings');
   };
 
   return (
