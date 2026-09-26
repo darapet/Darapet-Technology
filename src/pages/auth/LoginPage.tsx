@@ -25,6 +25,20 @@ export function LoginPage() {
     if (error) {
       setError(error.message);
     } else {
+      const { data: appUser, error: appUserError } = await supabase
+        .from('app_users')
+        .select('signup_otp_verified_at')
+        .eq('auth_user_id', data.user.id)
+        .maybeSingle();
+      if (appUserError) {
+        setError(appUserError.message);
+        return;
+      }
+      if (appUser && appUser.signup_otp_verified_at === null) {
+        setLocation('/register');
+        return;
+      }
+
       // Let the database-backed admin flag decide the destination. Never use
       // the password or a client-only email comparison as authorization.
       const { data: profile } = await supabase
