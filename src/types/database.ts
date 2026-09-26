@@ -544,6 +544,41 @@ export type Database = {
         };
         Relationships: NoRelationships;
       };
+      email_limit_rules: {
+        Row: {
+          id: string;
+          label: string;
+          min_account_age_days: number;
+          max_account_age_days: number | null;
+          daily_limit: number;
+          weekly_limit: number;
+          enabled: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          label: string;
+          min_account_age_days?: number;
+          max_account_age_days?: number | null;
+          daily_limit?: number;
+          weekly_limit?: number;
+          enabled?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          label?: string;
+          min_account_age_days?: number;
+          max_account_age_days?: number | null;
+          daily_limit?: number;
+          weekly_limit?: number;
+          enabled?: boolean;
+          updated_at?: string;
+        };
+        Relationships: NoRelationships;
+      };
       activity_logs: {
         Row: {
           id: string;
@@ -612,6 +647,7 @@ export type EmailTemplate = Database['public']['Tables']['email_templates']['Row
 export type ScheduledSend = Database['public']['Tables']['scheduled_sends']['Row'];
 export type Settings = Database['public']['Tables']['settings']['Row'];
 export type AppSettings = Database['public']['Tables']['app_settings']['Row'];
+export type EmailLimitRule = Database['public']['Tables']['email_limit_rules']['Row'];
 export type ActivityLog = Database['public']['Tables']['activity_logs']['Row'];
 
 export type UserStatus = 'active' | 'suspended' | 'restricted' | 'banned';

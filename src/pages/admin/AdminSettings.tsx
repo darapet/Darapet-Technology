@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { Settings, AppSettings } from '@/types/database';
+import type { Settings, AppSettings, EmailLimitRule } from '@/types/database';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,6 +12,9 @@ export function AdminSettings() {
   const { toast } = useToast();
   const [settings, setSettings] = useState<Partial<Settings>>({});
   const [appSettings, setAppSettings] = useState<Partial<AppSettings>>({});
+  const [limitRules, setLimitRules] = useState<EmailLimitRule[]>([]);
+  const [deletedRuleIds, setDeletedRuleIds] = useState<string[]>([]);
+  const [brazeDirty, setBrazeDirty] = useState(false);
   const [braze, setBraze] = useState({
     apiKey: '',
     appId: '',
@@ -25,12 +28,14 @@ export function AdminSettings() {
 
   useEffect(() => {
     const load = async () => {
-      const [s, a] = await Promise.all([
+      const [s, a, rules] = await Promise.all([
         supabase.from('settings').select('*').eq('id', 1).single(),
         supabase.from('app_settings').select('*').eq('id', 1).single(),
+        supabase.from('email_limit_rules').select('*').order('min_account_age_days', { ascending: true }),
       ]);
       if (s.data) setSettings(s.data);
       if (a.data) setAppSettings(a.data);
+      if (rules.data) setLimitRules(rules.data);
       const { data: brazeData } = await supabase.functions.invoke('admin-secrets', { body: { action: 'get' } });
       if (brazeData) setBraze(prev => ({
         ...prev,
@@ -49,27 +54,58 @@ export function AdminSettings() {
     setSaving(true);
     const { error } = await supabase.from('settings').upsert({ id: 1, ...settings, updated_at: new Date().toISOString() });
     const { error: err2 } = await supabase.from('app_settings').upsert({ id: 1, ...appSettings, updated_at: new Date().toISOString() });
-    const { data: brazeData, error: brazeError } = await supabase.functions.invoke('admin-secrets', {
-      body: {
-        action: 'save',
-        brazeApiKey: braze.apiKey,
-        brazeAppId: braze.appId,
-        brazeRestEndpoint: braze.restEndpoint,
-        brazeFromEmail: braze.fromEmail,
-        brazeFromName: braze.fromName,
-      },
-    });
+    let brazeData: { error?: string } | null = null;
+    let brazeError: { message: string } | null = null;
+    if (brazeDirty) {
+      const result = await supabase.functions.invoke('admin-secrets', {
+        body: {
+          action: 'save',
+          brazeApiKey: braze.apiKey,
+          brazeAppId: braze.appId,
+          brazeRestEndpoint: braze.restEndpoint,
+          brazeFromEmail: braze.fromEmail,
+          brazeFromName: braze.fromName,
+        },
+      });
+      brazeData = result.data;
+      brazeError = result.error;
+    }
+    const { error: deletedRulesError } = deletedRuleIds.length
+      ? await supabase.from('email_limit_rules').delete().in('id', deletedRuleIds)
+      : { error: null };
+    const { error: rulesError } = await supabase.from('email_limit_rules').upsert(
+      limitRules.map(rule => ({ ...rule, updated_at: new Date().toISOString() })),
+    );
     setSaving(false);
-    if (error || err2 || brazeError || brazeData?.error) {
-      toast({ variant: 'destructive', title: 'Error saving settings', description: (error || err2 || brazeError)?.message || brazeData?.error });
+    if (error || err2 || brazeError || brazeData?.error || deletedRulesError || rulesError) {
+      toast({ variant: 'destructive', title: 'Error saving settings', description: (error || err2 || brazeError || deletedRulesError || rulesError)?.message || brazeData?.error });
     } else {
-      setBraze(prev => ({ ...prev, apiKey: '', configured: true }));
+      setBraze(prev => ({ ...prev, apiKey: '', configured: brazeDirty ? true : prev.configured }));
+      setBrazeDirty(false);
+      setDeletedRuleIds([]);
       toast({ title: 'Settings saved', description: 'Platform settings and Braze OTP configuration have been updated.' });
     }
   };
 
   const set = (key: keyof Settings, value: string) => setSettings(prev => ({ ...prev, [key]: value }));
   const setApp = (key: keyof AppSettings, value: unknown) => setAppSettings(prev => ({ ...prev, [key]: value }));
+  const addLimitRule = () => setLimitRules(prev => [...prev, {
+    id: crypto.randomUUID(),
+    label: 'New account window',
+    min_account_age_days: 0,
+    max_account_age_days: 6,
+    daily_limit: 25,
+    weekly_limit: 100,
+    enabled: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }]);
+  const updateLimitRule = (id: string, patch: Partial<EmailLimitRule>) =>
+    setLimitRules(prev => prev.map(rule => rule.id === id ? { ...rule, ...patch } : rule));
+  const removeLimitRule = (id: string) => {
+    setLimitRules(prev => prev.filter(rule => rule.id !== id));
+    setDeletedRuleIds(prev => prev.includes(id) ? prev : [...prev, id]);
+  };
 
   if (loading) return <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="h-32 bg-white/5 rounded-xl animate-pulse" />)}</div>;
 
@@ -92,31 +128,31 @@ export function AdminSettings() {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label className="text-white/70">Braze REST API Key</Label>
-            <Input value={braze.apiKey} onChange={e => setBraze(prev => ({ ...prev, apiKey: e.target.value }))}
+            <Input value={braze.apiKey} onChange={e => { setBrazeDirty(true); setBraze(prev => ({ ...prev, apiKey: e.target.value })); }}
               placeholder={braze.configured ? 'Leave blank to keep the saved key' : 'Enter API key'} type="password"
               className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="text-white/70">Braze App ID</Label>
-              <Input value={braze.appId} onChange={e => setBraze(prev => ({ ...prev, appId: e.target.value }))}
+              <Input value={braze.appId} onChange={e => { setBrazeDirty(true); setBraze(prev => ({ ...prev, appId: e.target.value })); }}
                 placeholder="Your Braze email app ID" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
             </div>
             <div className="space-y-2">
               <Label className="text-white/70">REST Endpoint</Label>
-              <Input value={braze.restEndpoint} onChange={e => setBraze(prev => ({ ...prev, restEndpoint: e.target.value }))}
+              <Input value={braze.restEndpoint} onChange={e => { setBrazeDirty(true); setBraze(prev => ({ ...prev, restEndpoint: e.target.value })); }}
                 placeholder="https://rest.iad-01.braze.com" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
             </div>
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="text-white/70">From Email</Label>
-              <Input type="email" value={braze.fromEmail} onChange={e => setBraze(prev => ({ ...prev, fromEmail: e.target.value }))}
+              <Input type="email" value={braze.fromEmail} onChange={e => { setBrazeDirty(true); setBraze(prev => ({ ...prev, fromEmail: e.target.value })); }}
                 placeholder="no-reply@example.com" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
             </div>
             <div className="space-y-2">
               <Label className="text-white/70">From Name</Label>
-              <Input value={braze.fromName} onChange={e => setBraze(prev => ({ ...prev, fromName: e.target.value }))}
+              <Input value={braze.fromName} onChange={e => { setBrazeDirty(true); setBraze(prev => ({ ...prev, fromName: e.target.value })); }}
                 placeholder="Darapet Technology" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
             </div>
           </div>
@@ -197,6 +233,51 @@ export function AdminSettings() {
               className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
             <p className="text-xs text-white/30">Get from console.groq.com. Free tier available.</p>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* New account limits */}
+      <Card className="bg-white/5 border-white/5">
+        <CardHeader className="flex-row items-start justify-between space-y-0">
+          <div>
+            <CardTitle className="text-white flex items-center gap-2"><Mail className="w-5 h-5 text-cyan-400" /> New Account Email Windows</CardTitle>
+            <CardDescription className="text-white/40">Set daily and weekly limits by account age. Use 0 for unlimited.</CardDescription>
+          </div>
+          <Button type="button" size="sm" onClick={addLimitRule} className="bg-cyan-600/20 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-600/30">Add Window</Button>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {limitRules.length === 0 && <p className="text-sm text-white/35">No age windows configured yet. The default daily limit above remains in effect.</p>}
+          {limitRules.map(rule => (
+            <div key={rule.id} className="grid gap-3 rounded-lg bg-white/5 p-3 md:grid-cols-[1.4fr_1fr_1fr_1fr_1fr_auto] md:items-end">
+              <div className="space-y-1">
+                <Label className="text-xs text-white/50">Label</Label>
+                <Input value={rule.label} onChange={e => updateLimitRule(rule.id, { label: e.target.value })} className="bg-white/5 border-white/10 text-white h-9" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-white/50">From day</Label>
+                <Input type="number" min={0} value={rule.min_account_age_days} onChange={e => updateLimitRule(rule.id, { min_account_age_days: Number(e.target.value) })} className="bg-white/5 border-white/10 text-white h-9" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-white/50">To day</Label>
+                <Input type="number" min={rule.min_account_age_days} value={rule.max_account_age_days ?? ''} onChange={e => updateLimitRule(rule.id, { max_account_age_days: e.target.value === '' ? null : Number(e.target.value) })} placeholder="∞" className="bg-white/5 border-white/10 text-white h-9" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-white/50">Daily</Label>
+                <Input type="number" min={0} value={rule.daily_limit} onChange={e => updateLimitRule(rule.id, { daily_limit: Number(e.target.value) })} className="bg-white/5 border-white/10 text-white h-9" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-white/50">Weekly</Label>
+                <Input type="number" min={0} value={rule.weekly_limit} onChange={e => updateLimitRule(rule.id, { weekly_limit: Number(e.target.value) })} className="bg-white/5 border-white/10 text-white h-9" />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 text-xs text-white/60">
+                  <input type="checkbox" checked={rule.enabled} onChange={e => updateLimitRule(rule.id, { enabled: e.target.checked })} />
+                  On
+                </label>
+                <Button type="button" variant="ghost" size="sm" onClick={() => removeLimitRule(rule.id)} className="text-red-300 hover:bg-red-500/10">Remove</Button>
+              </div>
+            </div>
+          ))}
         </CardContent>
       </Card>
 

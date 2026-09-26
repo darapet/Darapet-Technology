@@ -44,8 +44,9 @@ Deno.serve(async (req) => {
 
     if (body.action !== "save") return json({ error: "Unsupported action" }, 400);
 
+    const submittedApiKey = String(body.brazeApiKey || "").trim();
     const values: Record<string, string> = {
-      braze_api_key: String(body.brazeApiKey || "").trim(),
+      braze_api_key: submittedApiKey || (await getSecret(admin, "braze_api_key") || ""),
       braze_app_id: String(body.brazeAppId || "").trim(),
       braze_rest_endpoint: String(body.brazeRestEndpoint || "").trim(),
       braze_from_email: String(body.brazeFromEmail || "").trim(),
