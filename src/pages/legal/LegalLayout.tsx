@@ -45,7 +45,7 @@ export function LegalLayout({ title, intro, children }: LegalLayoutProps) {
           <div className="flex flex-wrap gap-x-6 gap-y-2">
             <a href={privacyUrl} className="hover:text-blue-700">Privacy Policy</a>
             <a href={termsUrl} className="hover:text-blue-700">Terms and Conditions</a>
-            <a href={homeUrl} className="hover:text-blue-700">Back to Darapet</a>
+            <a href={homeUrl} className="hover:text-blue-700">Back to app</a>
           </div>
         </footer>
       </div>
