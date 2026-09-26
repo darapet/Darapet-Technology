@@ -4,7 +4,7 @@ export function PrivacyPage() {
   return (
     <LegalLayout
       title="Privacy Policy"
-      intro="This Privacy Policy explains how Darapet collects, uses, stores, and protects information when you use the Darapet application."
+      intro="This Privacy Policy explains how dearapet lead engine collects, uses, stores, and protects information when you use the dearapet lead engine application."
     >
       <h2>1. Information we collect</h2>
       <p>We collect information you provide when you create and use a Darapet account, including your name, email address, account preferences, campaigns, contacts, and other content you choose to store in the application.</p>
