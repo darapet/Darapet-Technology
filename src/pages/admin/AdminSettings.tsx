@@ -6,12 +6,20 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Mail, Search, Key, Info, Image } from 'lucide-react';
+import { Loader2, Mail, Search, Key, Info, Image, ShieldCheck } from 'lucide-react';
 
 export function AdminSettings() {
   const { toast } = useToast();
   const [settings, setSettings] = useState<Partial<Settings>>({});
   const [appSettings, setAppSettings] = useState<Partial<AppSettings>>({});
+  const [braze, setBraze] = useState({
+    apiKey: '',
+    appId: '',
+    restEndpoint: 'https://rest.iad-01.braze.com',
+    fromEmail: '',
+    fromName: 'Darapet Technology',
+    configured: false,
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -23,6 +31,15 @@ export function AdminSettings() {
       ]);
       if (s.data) setSettings(s.data);
       if (a.data) setAppSettings(a.data);
+      const { data: brazeData } = await supabase.functions.invoke('admin-secrets', { body: { action: 'get' } });
+      if (brazeData) setBraze(prev => ({
+        ...prev,
+        appId: brazeData.brazeAppId || '',
+        restEndpoint: brazeData.brazeRestEndpoint || prev.restEndpoint,
+        fromEmail: brazeData.brazeFromEmail || '',
+        fromName: brazeData.brazeFromName || prev.fromName,
+        configured: Boolean(brazeData.brazeConfigured),
+      }));
       setLoading(false);
     };
     load();
@@ -32,11 +49,22 @@ export function AdminSettings() {
     setSaving(true);
     const { error } = await supabase.from('settings').upsert({ id: 1, ...settings, updated_at: new Date().toISOString() });
     const { error: err2 } = await supabase.from('app_settings').upsert({ id: 1, ...appSettings, updated_at: new Date().toISOString() });
+    const { data: brazeData, error: brazeError } = await supabase.functions.invoke('admin-secrets', {
+      body: {
+        action: 'save',
+        brazeApiKey: braze.apiKey,
+        brazeAppId: braze.appId,
+        brazeRestEndpoint: braze.restEndpoint,
+        brazeFromEmail: braze.fromEmail,
+        brazeFromName: braze.fromName,
+      },
+    });
     setSaving(false);
-    if (error || err2) {
-      toast({ variant: 'destructive', title: 'Error saving settings', description: (error || err2)?.message });
+    if (error || err2 || brazeError || brazeData?.error) {
+      toast({ variant: 'destructive', title: 'Error saving settings', description: (error || err2 || brazeError)?.message || brazeData?.error });
     } else {
-      toast({ title: 'Settings saved', description: 'All platform settings have been updated.' });
+      setBraze(prev => ({ ...prev, apiKey: '', configured: true }));
+      toast({ title: 'Settings saved', description: 'Platform settings and Braze OTP configuration have been updated.' });
     }
   };
 
@@ -51,6 +79,52 @@ export function AdminSettings() {
         <h1 className="text-3xl font-bold text-white">Platform Settings</h1>
         <p className="text-white/40 mt-1">Configure email, scraping, and global defaults</p>
       </div>
+
+      {/* Braze / OTP */}
+      <Card className="bg-white/5 border-white/5">
+        <CardHeader>
+          <CardTitle className="text-white flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-violet-400" /> Braze OTP Delivery</CardTitle>
+          <CardDescription className="text-white/40">
+            OTPs are generated and sent by a Supabase Edge Function. The API key is never returned to this page.
+            {braze.configured && <span className="text-emerald-400 ml-1">Configured.</span>}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label className="text-white/70">Braze REST API Key</Label>
+            <Input value={braze.apiKey} onChange={e => setBraze(prev => ({ ...prev, apiKey: e.target.value }))}
+              placeholder={braze.configured ? 'Leave blank to keep the saved key' : 'Enter API key'} type="password"
+              className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-white/70">Braze App ID</Label>
+              <Input value={braze.appId} onChange={e => setBraze(prev => ({ ...prev, appId: e.target.value }))}
+                placeholder="Your Braze email app ID" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-white/70">REST Endpoint</Label>
+              <Input value={braze.restEndpoint} onChange={e => setBraze(prev => ({ ...prev, restEndpoint: e.target.value }))}
+                placeholder="https://rest.iad-01.braze.com" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+            </div>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-white/70">From Email</Label>
+              <Input type="email" value={braze.fromEmail} onChange={e => setBraze(prev => ({ ...prev, fromEmail: e.target.value }))}
+                placeholder="no-reply@example.com" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-white/70">From Name</Label>
+              <Input value={braze.fromName} onChange={e => setBraze(prev => ({ ...prev, fromName: e.target.value }))}
+                placeholder="Darapet Technology" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+            </div>
+          </div>
+          <p className="text-xs text-white/30 flex items-start gap-1">
+            <Info className="w-3 h-3 mt-0.5 shrink-0" /> Deploy the <code>admin-secrets</code> and <code>admin-send-otp</code> Supabase Edge Functions before testing delivery.
+          </p>
+        </CardContent>
+      </Card>
 
       {/* Email / OTP */}
       <Card className="bg-white/5 border-white/5">

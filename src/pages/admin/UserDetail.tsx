@@ -71,6 +71,7 @@ export function UserDetail() {
 
   const [emailLimit, setEmailLimit] = useState('');
   const [planName, setPlanName] = useState('');
+  const [sendingOtp, setSendingOtp] = useState(false);
   const [restrictionTitle, setRestrictionTitle] = useState('');
   const [restrictionDesc, setRestrictionDesc] = useState('');
   const [restrictionFields, setRestrictionFields] = useState<RestrictionField[]>([]);
@@ -163,6 +164,17 @@ export function UserDetail() {
     setUser(prev => prev ? { ...prev, daily_email_limit: Number(emailLimit), role: planName } as AppUser : prev);
     setUpgradeDialog(false);
     toast({ title: 'Plan Updated', description: 'Email limit and plan name updated.' });
+  };
+
+  const handleSendOtp = async () => {
+    setSendingOtp(true);
+    const { data, error } = await supabase.functions.invoke('admin-send-otp', { body: { appUserId: id } });
+    setSendingOtp(false);
+    if (error || data?.error) {
+      toast({ variant: 'destructive', title: 'OTP not sent', description: error?.message || data?.error });
+      return;
+    }
+    toast({ title: 'OTP sent', description: `A verification code was sent to ${data?.recipient || user?.email || 'the user'}.` });
   };
 
   const addField = () => {
@@ -260,6 +272,9 @@ export function UserDetail() {
             )}
             <Button onClick={() => setUpgradeDialog(true)} className="bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30">
               <Mail className="w-4 h-4 mr-2" /> Set Plan / Limits
+            </Button>
+            <Button onClick={handleSendOtp} disabled={sendingOtp || !user.email} className="bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 border border-violet-500/30">
+              {sendingOtp ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Mail className="w-4 h-4 mr-2" />} Send OTP
             </Button>
             <Button onClick={() => setDeleteDialog(true)} className="bg-red-900/30 hover:bg-red-900/50 text-red-300 border border-red-800/30">
               <Trash2 className="w-4 h-4 mr-2" /> Delete Account
