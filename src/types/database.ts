@@ -137,6 +137,7 @@ export type Database = {
           google_search_api_key: string | null;
           google_search_engine_id: string | null;
           created_at: string | null;
+          signup_otp_verified_at: string | null;
         };
         Insert: {
           auth_user_id?: string | null;
@@ -163,6 +164,8 @@ export type Database = {
           brevo_api_key?: string | null;
           google_search_api_key?: string | null;
           google_search_engine_id?: string | null;
+          signup_otp_verified_at?: string | null;
+          signup_otp_verified_at?: string | null;
         };
         Update: {
           auth_user_id?: string | null;
