@@ -17,6 +17,8 @@ import { RestrictedPage } from '@/pages/auth/RestrictedPage';
 import { Dashboard } from '@/pages/dashboard';
 import { SettingsPage } from '@/pages/settings';
 import NotFound from '@/pages/not-found';
+import { PrivacyPage } from '@/pages/legal/PrivacyPage';
+import { TermsPage } from '@/pages/legal/TermsPage';
 
 // Campaign pages
 import { CampaignsPage } from '@/pages/campaigns/CampaignsPage';
@@ -54,6 +56,8 @@ function AppRoutes() {
 
   return (
     <Switch>
+      <Route path="/privacy" component={PrivacyPage} />
+      <Route path="/terms" component={TermsPage} />
       {/* Public auth routes Ã¢ÂÂ redirect away if already signed in */}
       <Route path="/login">
         {user ? <Redirect to="/" /> : <LoginPage />}
