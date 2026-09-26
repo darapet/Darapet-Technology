@@ -51,7 +51,7 @@ function AppRoutes() {
 
   return (
     <Switch>
-      {/* Public auth routes — redirect away if already signed in */}
+      {/* Public auth routes â redirect away if already signed in */}
       <Route path="/login">
         {user ? <Redirect to="/" /> : <LoginPage />}
       </Route>
@@ -64,7 +64,7 @@ function AppRoutes() {
       <Route path="/banned" component={BannedPage} />
       <Route path="/restricted" component={RestrictedPage} />
 
-      {/* Onboarding wizard was removed — send anyone hitting the old link to Settings */}
+      {/* Onboarding wizard was removed â send anyone hitting the old link to Settings */}
       <Route path="/onboarding">
         {!user ? <Redirect to="/login" /> : <Redirect to="/settings" />}
       </Route>
@@ -157,7 +157,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
-          <WouterRouter base="/">
+          <WouterRouter base={import.meta.env.BASE_URL}>
             <AppRoutes />
           </WouterRouter>
           <Toaster />
