@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { uploadFileToCloudinary } from '@/lib/cloudinary';
 import { hasUsableEmailProvider, sendEmail } from '@/lib/emailSend';
 import { disconnectGmail, getGmailStatus, sendGmail, startGmailConnection, type GmailStatus } from '@/lib/gmail';
 import { parseAiJson, extractLeadsFromFile, toHtmlEmail, type ScoutLead } from '@/lib/scouting';
@@ -130,6 +131,11 @@ export function ScoutingPage() {
       return;
     }
     try {
+      if (/^https?:\/\//i.test(lead.source_file_path)) {
+        window.open(lead.source_file_path, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      // Keep legacy Supabase-stored imports readable when their bucket exists.
       const { data, error } = await db.storage.from('scouting-imports').createSignedUrl(lead.source_file_path, 3600);
       if (error) throw error;
       window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
@@ -140,23 +146,16 @@ export function ScoutingPage() {
 
   const importFile = async (file: File) => {
     setImporting(true);
-    let sourceFilePath = '';
+    let sourceFileUrl = '';
     try {
-      const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_') || 'uploaded-file';
-      sourceFilePath = `${user!.id}/${crypto.randomUUID()}-${safeFileName}`;
-      const { error: storageError } = await db.storage.from('scouting-imports').upload(sourceFilePath, file, {
-        upsert: false,
-        contentType: file.type || 'application/octet-stream',
-      });
-      if (storageError) {
-        throw new Error(`Could not store the original file: ${storageError.message}. Run the latest Supabase migration first.`);
-      }
+      const uploaded = await uploadFileToCloudinary(file, 'darapet/' + user!.id + '/scouting-imports');
+      sourceFileUrl = uploaded.secureUrl;
 
       const imported = await extractLeadsFromFile(file);
       const rows = imported.map(({ id: _id, ...lead }) => ({
         ...lead,
         user_id: user!.id,
-        source_file_path: sourceFilePath,
+        source_file_path: sourceFileUrl,
         source_file_type: file.type || 'application/octet-stream',
         source_file_size: file.size,
       }));
@@ -166,7 +165,7 @@ export function ScoutingPage() {
       setSelectedIds(new Set((data || []).map((lead: ScoutLead) => lead.id)));
       toast({ title: `${data?.length || imported.length} records saved`, description: 'Every imported record is kept, including records without email addresses.' });
     } catch (error) {
-      toast({ variant: 'destructive', title: 'Import failed', description: error instanceof Error ? error.message : 'Check the file and try again.' });
+      toast({ variant: 'destructive', title: 'Import failed', description: error instanceof Error ? error.message : 'Check the file and Cloudinary settings, then try again.' });
     } finally {
       setImporting(false);
       if (fileInput.current) fileInput.current.value = '';
@@ -592,7 +591,7 @@ If you would rather not receive messages from me, reply "unsubscribe" and I will
           )}
         </CardContent>
       </Card>
-      <div className="flex items-start gap-2 text-xs text-muted-foreground max-w-3xl"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /><p>Original uploads are kept privately in your storage account. Records without email addresses are saved for review, but only records with email addresses can be sent messages.</p></div>
+      <div className="flex items-start gap-2 text-xs text-muted-foreground max-w-3xl"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /><p>Original uploads are kept in your Cloudinary account. Records without email addresses are saved for review, but only records with email addresses can be sent messages.</p></div>
     </div>
   );
 }
