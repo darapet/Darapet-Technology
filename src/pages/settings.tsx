@@ -17,45 +17,7 @@ import { detectSmtpPreset, type SmtpPreset } from '@/lib/emailSend';
 import { SOCIAL_PLATFORMS, SOCIAL_CATEGORIES } from '@/data/socialMedia';
 import { SocialIcon } from '@/data/socialIcons';
 import type { SocialLink } from '@/pages/email/emailTemplates';
-
-// ─── Cloudinary ───────────────────────────────────────────────────────────────
-
-async function getCloudinaryConfig(): Promise<{ cloud: string; preset: string }> {
-  const { data } = await supabase.from('settings').select('cloudinary_cloud_name, cloudinary_upload_preset').eq('id', 1).single();
-  // Trim any accidental whitespace that may have been copy-pasted into the admin form
-  const cloud = (data?.cloudinary_cloud_name || '').trim();
-  const preset = (data?.cloudinary_upload_preset || '').trim();
-  if (!cloud || !preset) throw new Error('Cloudinary is not configured. Ask your admin to add the Cloud Name and Upload Preset in Admin → Settings.');
-  return { cloud, preset };
-}
-
-async function uploadToCloudinary(file: File, folder: string): Promise<string> {
-  const { cloud, preset } = await getCloudinaryConfig();
-  const form = new FormData();
-  form.append('file', file);
-  form.append('upload_preset', preset);
-  form.append('folder', folder);
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${cloud}/image/upload`, {
-    method: 'POST',
-    body: form,
-  });
-  if (!res.ok) {
-    let reason = res.statusText;
-    try {
-      const errBody = await res.json();
-      reason = errBody?.error?.message ?? reason;
-    } catch { /* ignore */ }
-    if (res.status === 401 || res.status === 400) {
-      throw new Error(
-        `Cloudinary upload failed: ${reason}. ` +
-        `Make sure the Upload Preset in Admin → Settings → Image Storage is set to "Unsigned" signing mode in your Cloudinary dashboard (Settings → Upload → Upload Presets).`
-      );
-    }
-    throw new Error(`Cloudinary upload failed: ${reason}`);
-  }
-  const data = await res.json();
-  return data.secure_url as string;
-}
+import { uploadImageToCloudinary } from '@/lib/cloudinary';
 
 // ─── Secret input ─────────────────────────────────────────────────────────────
 
@@ -353,7 +315,7 @@ export function SettingsPage() {
 
       if (logoFile) {
         try {
-          logo_url = await uploadToCloudinary(logoFile, `darapet/${user.id}`);
+          logo_url = await uploadImageToCloudinary(logoFile, `darapet/${user.id}`);
         } catch (err) {
           toast({ variant: 'destructive', title: 'Logo upload failed', description: err instanceof Error ? err.message : 'Check your Cloudinary settings.', duration: 12000 });
           setSaving(false);
@@ -362,7 +324,7 @@ export function SettingsPage() {
       }
       if (sigFile) {
         try {
-          signature_url = await uploadToCloudinary(sigFile, `darapet/${user.id}`);
+          signature_url = await uploadImageToCloudinary(sigFile, `darapet/${user.id}`);
         } catch (err) {
           toast({ variant: 'destructive', title: 'Signature upload failed', description: err instanceof Error ? err.message : 'Check your Cloudinary settings.', duration: 12000 });
           setSaving(false);
