@@ -91,8 +91,11 @@ Deno.serve(async (req) => {
     const { data: challenge, error: challengeError } = await admin.from("signup_otp_challenges").select("id, code_hash, expires_at").eq("auth_user_id", userId).is("consumed_at", null).gt("expires_at", new Date().toISOString()).order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (challengeError) throw new Error(challengeError.message);
     if (!challenge || challenge.code_hash !== await hashOtp(body.code)) return json({ error: "That code is invalid or expired." }, 400);
-    const { error: consumeError } = await admin.from("signup_otp_challenges").update({ consumed_at: new Date().toISOString() }).eq("id", challenge.id);
+    const verifiedAt = new Date().toISOString();
+    const { error: consumeError } = await admin.from("signup_otp_challenges").update({ consumed_at: verifiedAt }).eq("id", challenge.id);
     if (consumeError) throw new Error(consumeError.message);
+    const { error: verifiedError } = await admin.from("app_users").update({ signup_otp_verified_at: verifiedAt }).eq("auth_user_id", userId);
+    if (verifiedError) throw new Error(verifiedError.message);
     return json({ verified: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected error";
