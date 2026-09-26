@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'wouter';
 import {
-  AlertCircle, Check, CheckCircle2, ChevronDown, ExternalLink, FileText,
+  AlertCircle, Check, CheckCircle2, ChevronDown, ExternalLink, FileDown, FileText,
   Globe2, Loader2, Mail, Megaphone, NotebookPen, RefreshCw, Search,
   Send, ShieldCheck, Sparkles, Upload, UserRound, X,
   type LucideIcon,
@@ -124,20 +124,47 @@ export function ScoutingPage() {
     if (error) toast({ variant: 'destructive', title: 'Could not save lead', description: error.message });
   };
 
+  const openSourceFile = async (lead: ScoutLead) => {
+    if (!lead.source_file_path) {
+      toast({ variant: 'destructive', title: 'Original file unavailable', description: 'This older record does not have a stored source file.' });
+      return;
+    }
+    try {
+      const { data, error } = await db.storage.from('scouting-imports').createSignedUrl(lead.source_file_path, 3600);
+      if (error) throw error;
+      window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Could not open original file', description: error instanceof Error ? error.message : 'Check the storage migration and try again.' });
+    }
+  };
+
   const importFile = async (file: File) => {
     setImporting(true);
+    let sourceFilePath = '';
     try {
-      const imported = await extractLeadsFromFile(file);
-      if (!imported.length) {
-        toast({ variant: 'destructive', title: 'No email addresses found', description: 'Use a PDF, CSV, or text file with one email per lead.' });
-        return;
+      const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_') || 'uploaded-file';
+      sourceFilePath = `${user!.id}/${crypto.randomUUID()}-${safeFileName}`;
+      const { error: storageError } = await db.storage.from('scouting-imports').upload(sourceFilePath, file, {
+        upsert: false,
+        contentType: file.type || 'application/octet-stream',
+      });
+      if (storageError) {
+        throw new Error(`Could not store the original file: ${storageError.message}. Run the latest Supabase migration first.`);
       }
-      const rows = imported.map(({ id: _id, ...lead }) => ({ ...lead, user_id: user!.id }));
+
+      const imported = await extractLeadsFromFile(file);
+      const rows = imported.map(({ id: _id, ...lead }) => ({
+        ...lead,
+        user_id: user!.id,
+        source_file_path: sourceFilePath,
+        source_file_type: file.type || 'application/octet-stream',
+        source_file_size: file.size,
+      }));
       const { data, error } = await db.from('scout_leads').insert(rows).select('*');
       if (error) throw error;
       setLeads(current => [...((data || []) as ScoutLead[]), ...current]);
       setSelectedIds(new Set((data || []).map((lead: ScoutLead) => lead.id)));
-      toast({ title: `${data?.length || imported.length} leads imported`, description: 'Review the details, then research the websites you want to approach.' });
+      toast({ title: `${data?.length || imported.length} records saved`, description: 'Every imported record is kept, including records without email addresses.' });
     } catch (error) {
       toast({ variant: 'destructive', title: 'Import failed', description: error instanceof Error ? error.message : 'Check the file and try again.' });
     } finally {
@@ -413,12 +440,12 @@ If you would rather not receive messages from me, reply "unsubscribe" and I will
         <div>
           <div className="flex items-center gap-2 text-primary text-sm font-semibold mb-2"><Megaphone className="w-4 h-4" /> Scouting workspace</div>
           <h1 className="text-3xl font-bold tracking-tight">Find better-fit clients</h1>
-          <p className="text-muted-foreground mt-2 max-w-2xl">Import leads, research each website, and prepare one thoughtful message at a time. Every draft stays editable before anything is sent.</p>
+          <p className="text-muted-foreground mt-2 max-w-2xl">Import any file, keep every record, and optionally research the website or prepare an outreach message when contact details are available.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <input ref={fileInput} type="file" accept=".pdf,.csv,.txt,.json,application/pdf,text/plain,text/csv,application/json" className="hidden" onChange={event => event.target.files?.[0] && importFile(event.target.files[0])} />
+          <input ref={fileInput} type="file" accept="*/*" className="hidden" onChange={event => event.target.files?.[0] && importFile(event.target.files[0])} />
           <Button onClick={() => fileInput.current?.click()} disabled={importing} className="gap-2">
-            {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Import PDF or list
+            {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Import any file
           </Button>
           <Link href="/campaigns/history"><Button variant="outline" className="gap-2"><Mail className="w-4 h-4" /> Campaign history</Button></Link>
         </div>
@@ -470,7 +497,7 @@ If you would rather not receive messages from me, reply "unsubscribe" and I will
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-            <div><CardTitle className="text-base">Lead list</CardTitle><p className="text-sm text-muted-foreground mt-1">Select leads to research, personalize, or send after review.</p></div>
+            <div><CardTitle className="text-base">Imported records</CardTitle><p className="text-sm text-muted-foreground mt-1">Every row is saved. Records with email addresses can still be researched and contacted.</p></div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={personalizeSelected} disabled={personalizing || sending} className="gap-1.5">{personalizing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />} Personalize selected</Button>
               <Button size="sm" onClick={sendSelected} disabled={sending || personalizing} className="gap-1.5">{sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Send reviewed</Button>
@@ -489,8 +516,8 @@ If you would rather not receive messages from me, reply "unsubscribe" and I will
           {leads.length === 0 ? (
             <div className="py-16 text-center border border-dashed rounded-xl">
               <Upload className="w-10 h-10 mx-auto text-muted-foreground/40 mb-3" />
-              <p className="font-medium">No leads imported yet</p>
-              <p className="text-sm text-muted-foreground mt-1">Upload the PDF or list you generated from ChatGPT to start scouting.</p>
+              <p className="font-medium">No records imported yet</p>
+              <p className="text-sm text-muted-foreground mt-1">Upload any file. The original file and any readable rows will be saved.</p>
             </div>
           ) : filteredLeads.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">No leads match this filter.</div>
@@ -512,7 +539,8 @@ If you would rather not receive messages from me, reply "unsubscribe" and I will
                         </div>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-muted-foreground">
                           {lead.owner_name && <span className="flex items-center gap-1"><UserRound className="w-3 h-3" />{lead.owner_name}</span>}
-                          <span>{lead.email}</span>
+                          {lead.email ? <span>{lead.email}</span> : <span className="italic">No email</span>}
+                          {lead.source_file_name && <span className="flex items-center gap-1"><FileText className="w-3 h-3" />{lead.source_file_name}</span>}
                           {lead.website && <span className="flex items-center gap-1"><Globe2 className="w-3 h-3" />{displayWebsite(lead.website)}</span>}
                         </div>
                       </button>
@@ -539,6 +567,7 @@ If you would rather not receive messages from me, reply "unsubscribe" and I will
                             <div className="flex flex-wrap gap-2">
                               <Button size="sm" onClick={() => researchLead(lead)} disabled={researching === lead.id || lead.opted_out} className="gap-1.5">{researching === lead.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />} Research this lead</Button>
                               {lead.website && <Button variant="outline" size="sm" onClick={() => window.open(lead.website, '_blank', 'noopener,noreferrer')} className="gap-1.5"><ExternalLink className="w-3.5 h-3.5" /> Open website</Button>}
+                              {lead.source_file_path && <Button variant="outline" size="sm" onClick={() => openSourceFile(lead)} className="gap-1.5"><FileDown className="w-3.5 h-3.5" /> Open original file</Button>}
                               <Button variant={lead.opted_out ? 'secondary' : 'ghost'} size="sm" onClick={() => saveLead(lead.id, { opted_out: !lead.opted_out })} className="gap-1.5">{lead.opted_out ? <Check className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5" />} {lead.opted_out ? 'Opted out' : 'Mark opted out'}</Button>
                             </div>
                           </div>
@@ -563,7 +592,7 @@ If you would rather not receive messages from me, reply "unsubscribe" and I will
           )}
         </CardContent>
       </Card>
-      <div className="flex items-start gap-2 text-xs text-muted-foreground max-w-3xl"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /><p>Use this for relevant, lawful outreach only. The app excludes leads you mark opted out, adds an unsubscribe instruction to generated messages, and keeps every message editable before sending. Delivery status is tracked; mailbox spam placement is not reliably observable from a client-only GitHub Pages app.</p></div>
+      <div className="flex items-start gap-2 text-xs text-muted-foreground max-w-3xl"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /><p>Original uploads are kept privately in your storage account. Records without email addresses are saved for review, but only records with email addresses can be sent messages.</p></div>
     </div>
   );
 }
