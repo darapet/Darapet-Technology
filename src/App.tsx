@@ -157,7 +157,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
-          <WouterRouter base="/Darapet-Technology">
+          <WouterRouter base="/">
             <AppRoutes />
           </WouterRouter>
           <Toaster />
