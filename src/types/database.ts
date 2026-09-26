@@ -590,16 +590,22 @@ export type Database = {
         Row: {
           id: number;
           default_daily_email_limit: number | null;
+          otp_enabled: boolean;
+          otp_provider: string;
           updated_at: string | null;
         };
         Insert: {
           id?: number;
           default_daily_email_limit?: number | null;
+          otp_enabled?: boolean;
+          otp_provider?: string;
           updated_at?: string | null;
         };
         Update: {
           id?: number;
           default_daily_email_limit?: number | null;
+          otp_enabled?: boolean;
+          otp_provider?: string;
           updated_at?: string | null;
         };
         Relationships: NoRelationships;
