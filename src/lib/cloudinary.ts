@@ -54,56 +54,39 @@ async function getCloudinaryConfig(): Promise<{ cloud: string; preset: string }>
   return { cloud, preset };
 }
 
-export async function uploadToCloudinary(file: File, folder: string): Promise<CloudinaryUploadResult> {
-  const assetType = validateAssetFile(file);
+async function uploadToCloudinaryResponse(file: File, folder: string) {
   const { cloud, preset } = await getCloudinaryConfig();
   const form = new FormData();
   form.append('file', file);
   form.append('upload_preset', preset);
   form.append('folder', folder);
-
-  const response = await fetch(`https://api.cloudinary.com/v1_1/${cloud}/auto/upload`, {
-    method: 'POST',
-    body: form,
-  });
-
+  const response = await fetch('https://api.cloudinary.com/v1_1/' + cloud + '/auto/upload', { method: 'POST', body: form });
   if (!response.ok) {
     let reason = response.statusText;
-    try {
-      const errorBody = await response.json();
-      reason = errorBody?.error?.message ?? reason;
-    } catch {
-      // Keep the HTTP status text when Cloudinary does not return JSON.
-    }
-    if (response.status === 400 || response.status === 401) {
-      throw new Error(
-        `Cloudinary upload failed: ${reason}. Make sure the Upload Preset in Admin → Settings → Image Storage is set to "Unsigned".`,
-      );
-    }
-    throw new Error(`Cloudinary upload failed: ${reason}`);
+    try { const errorBody = await response.json(); reason = errorBody?.error?.message ?? reason; } catch { /* keep status text */ }
+    if (response.status === 400 || response.status === 401) throw new Error('Cloudinary upload failed: ' + reason + '. Make sure the Upload Preset in Admin → Settings → Image Storage is set to "Unsigned".');
+    throw new Error('Cloudinary upload failed: ' + reason);
   }
-
-  const data = await response.json();
-  return {
-    assetType,
-    bytes: Number(data.bytes ?? file.size),
-    duration: data.duration == null ? null : Number(data.duration),
-    format: data.format ?? null,
-    height: data.height == null ? null : Number(data.height),
-    originalFilename: data.original_filename ?? file.name,
-    publicId: data.public_id,
-    resourceType: data.resource_type ?? assetType,
-    secureUrl: data.secure_url,
-    width: data.width == null ? null : Number(data.width),
-    metadata: {
-      resource_type: data.resource_type ?? null,
-      version: data.version ?? null,
-      created_at: data.created_at ?? null,
-      etag: data.etag ?? null,
-    },
-  };
+  return response.json();
 }
 
+function cloudinaryMetadata(data: any): Json {
+  return { resource_type: data.resource_type ?? null, version: data.version ?? null, created_at: data.created_at ?? null, etag: data.etag ?? null };
+}
+
+export async function uploadToCloudinary(file: File, folder: string): Promise<CloudinaryUploadResult> {
+  const assetType = validateAssetFile(file);
+  const data = await uploadToCloudinaryResponse(file, folder);
+  return { assetType, bytes: Number(data.bytes ?? file.size), duration: data.duration == null ? null : Number(data.duration), format: data.format ?? null, height: data.height == null ? null : Number(data.height), originalFilename: data.original_filename ?? file.name, publicId: data.public_id, resourceType: data.resource_type ?? assetType, secureUrl: data.secure_url, width: data.width == null ? null : Number(data.width), metadata: cloudinaryMetadata(data) };
+}
+
+export interface CloudinaryFileUploadResult { bytes: number; format: string | null; originalFilename: string; publicId: string; resourceType: string; secureUrl: string; }
+
+// Scouting imports can be CSV, JSON, text, spreadsheets, PDFs, or media.
+export async function uploadFileToCloudinary(file: File, folder: string): Promise<CloudinaryFileUploadResult> {
+  const data = await uploadToCloudinaryResponse(file, folder);
+  return { bytes: Number(data.bytes ?? file.size), format: data.format ?? null, originalFilename: data.original_filename ?? file.name, publicId: data.public_id, resourceType: data.resource_type ?? 'raw', secureUrl: data.secure_url };
+}
 export async function uploadImageToCloudinary(file: File, folder: string): Promise<string> {
   return (await uploadToCloudinary(file, folder)).secureUrl;
 }
