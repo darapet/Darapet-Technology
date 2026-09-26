@@ -707,6 +707,7 @@ export type EmailTemplate = Database['public']['Tables']['email_templates']['Row
 export type ScheduledSend = Database['public']['Tables']['scheduled_sends']['Row'];
 export type Settings = Database['public']['Tables']['settings']['Row'];
 export type UserAsset = Database['public']['Tables']['user_assets']['Row'];
+export type UserAssetInsert = Database['public']['Tables']['user_assets']['Insert'];
 export type AppSettings = Database['public']['Tables']['app_settings']['Row'];
 export type EmailLimitRule = Database['public']['Tables']['email_limit_rules']['Row'];
 export type ActivityLog = Database['public']['Tables']['activity_logs']['Row'];
