@@ -166,11 +166,17 @@ export function AdminSettings() {
               <p className="font-medium text-white">Enable OTP sending</p>
               <p className="mt-1 text-xs text-white/40">The Send OTP action stays blocked until this switch is enabled.</p>
             </div>
-            <Switch
-              checked={appSettings.otp_enabled === true}
-              onCheckedChange={checked => setApp('otp_enabled', checked)}
-              aria-label="Enable OTP sending"
-            />
+            <div className="flex items-center gap-3">
+              <span className={appSettings.otp_enabled === true ? 'text-sm font-semibold text-emerald-300' : 'text-sm font-semibold text-white/60'}>
+                {appSettings.otp_enabled === true ? 'Enabled' : 'Disabled'}
+              </span>
+              <Switch
+                checked={appSettings.otp_enabled === true}
+                onCheckedChange={checked => setApp('otp_enabled', checked)}
+                className="h-6 w-11 border-white/20 bg-white/10 data-[state=checked]:bg-emerald-500 data-[state=unchecked]:bg-white/20"
+                aria-label={appSettings.otp_enabled === true ? 'Disable OTP sending' : 'Enable OTP sending'}
+              />
+            </div>
           </div>
 
           <div className="grid sm:grid-cols-2 gap-4">
