@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation } from 'wouter';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,6 +11,7 @@ import { motion } from 'framer-motion';
 
 export function RegisterPage() {
   const [, setLocation] = useLocation();
+  const { user, appUser, isAdmin, refreshProfile } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -20,6 +22,20 @@ export function RegisterPage() {
   const [verificationCode, setVerificationCode] = useState('');
   const [verificationEmail, setVerificationEmail] = useState('');
   const [registeredUserId, setRegisteredUserId] = useState('');
+
+  // Supabase may return a live session immediately after sign-up. Keep this
+  // page mounted and restore the OTP step after refresh/navigation until the
+  // server marks the account as verified.
+  useEffect(() => {
+    if (!user || !appUser) return;
+    if (appUser.signup_otp_verified_at === null) {
+      setRegisteredUserId(user.id);
+      setVerificationEmail(user.email ?? '');
+      setVerificationStep(true);
+      return;
+    }
+    setLocation(isAdmin ? '/admin' : '/dashboard');
+  }, [user, appUser, isAdmin, setLocation]);
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,8 +55,9 @@ export function RegisterPage() {
       return;
     }
 
+    await refreshProfile();
     setLoading(false);
-    setLocation('/dashboard');
+    setLocation(isAdmin ? '/admin' : '/dashboard');
   };
 
   const handleResendOtp = async () => {
