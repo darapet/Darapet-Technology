@@ -34,6 +34,9 @@ import { AdminSettings } from '@/pages/admin/AdminSettings';
 import { ActivityPage } from '@/pages/admin/ActivityPage';
 import { ReviewRequestsPage } from '@/pages/admin/ReviewRequestsPage';
 
+const githubPagesBase = '/Darapet-Technology';
+const routerBase = window.location.pathname === githubPagesBase || window.location.pathname.startsWith(`${githubPagesBase}/`) ? githubPagesBase : '/';
+
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } },
 });
@@ -51,7 +54,7 @@ function AppRoutes() {
 
   return (
     <Switch>
-      {/* Public auth routes â redirect away if already signed in */}
+      {/* Public auth routes Ã¢ÂÂ redirect away if already signed in */}
       <Route path="/login">
         {user ? <Redirect to="/" /> : <LoginPage />}
       </Route>
@@ -64,7 +67,7 @@ function AppRoutes() {
       <Route path="/banned" component={BannedPage} />
       <Route path="/restricted" component={RestrictedPage} />
 
-      {/* Onboarding wizard was removed â send anyone hitting the old link to Settings */}
+      {/* Onboarding wizard was removed Ã¢ÂÂ send anyone hitting the old link to Settings */}
       <Route path="/onboarding">
         {!user ? <Redirect to="/login" /> : <Redirect to="/settings" />}
       </Route>
@@ -157,7 +160,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
-          <WouterRouter base={import.meta.env.BASE_URL}>
+          <WouterRouter base={routerBase}>
             <AppRoutes />
           </WouterRouter>
           <Toaster />
