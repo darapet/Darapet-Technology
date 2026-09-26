@@ -38,7 +38,8 @@ import { ActivityPage } from '@/pages/admin/ActivityPage';
 import { ReviewRequestsPage } from '@/pages/admin/ReviewRequestsPage';
 
 const githubPagesBase = '/Darapet-Technology';
-const routerBase = window.location.pathname === githubPagesBase || window.location.pathname.startsWith(`${githubPagesBase}/`) ? githubPagesBase : '/';
+const normalizedPathname = window.location.pathname.replace(/\/+$/, '') || '/';
+const routerBase = normalizedPathname === githubPagesBase || normalizedPathname.startsWith(`${githubPagesBase}/`) ? githubPagesBase : '/';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } },
