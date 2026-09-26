@@ -25,7 +25,7 @@ export function LoginPage() {
     if (error) {
       setError(error.message);
     } else {
-      setLocation('/');
+      setLocation('/dashboard');
     }
   };
 
@@ -115,7 +115,7 @@ export function LoginPage() {
           </CardContent>
         </Card>
       <p className="mt-6 text-center text-xs leading-5 text-blue-200/50">
-        By using Darapet, you agree to our{' '}
+        By using dearapet lead engine, you agree to our{' '}
         <button type="button" onClick={() => setLocation('/privacy')} className="text-blue-300 underline underline-offset-2 hover:text-white">Privacy Policy</button>
         {' '}and{' '}
         <button type="button" onClick={() => setLocation('/terms')} className="text-blue-300 underline underline-offset-2 hover:text-white">Terms and Conditions</button>.
