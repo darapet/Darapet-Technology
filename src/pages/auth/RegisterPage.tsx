@@ -158,6 +158,12 @@ export function RegisterPage() {
             </form>
           </CardContent>
         </Card>
+      <p className="mt-6 text-center text-xs leading-5 text-blue-200/50">
+        By using Darapet, you agree to our{' '}
+        <button type="button" onClick={() => setLocation('/privacy')} className="text-blue-300 underline underline-offset-2 hover:text-white">Privacy Policy</button>
+        {' '}and{' '}
+        <button type="button" onClick={() => setLocation('/terms')} className="text-blue-300 underline underline-offset-2 hover:text-white">Terms and Conditions</button>.
+      </p>
       </motion.div>
     </div>
   );
