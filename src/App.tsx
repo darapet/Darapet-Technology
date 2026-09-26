@@ -46,7 +46,7 @@ const queryClient = new QueryClient({
 });
 
 function AppRoutes() {
-  const { user, isAdmin, isLoading } = useAuth();
+  const { user, isLoading } = useAuth();
 
   if (isLoading) {
     return (
@@ -62,10 +62,10 @@ function AppRoutes() {
       <Route path="/terms" component={TermsPage} />
       {/* Public auth routes Ã¢ÂÂ redirect away if already signed in */}
       <Route path="/login">
-        {user ? <Redirect to={isAdmin ? "/admin" : "/dashboard"} /> : <LoginPage />}
+        <LoginPage />
       </Route>
       <Route path="/register">
-        {user ? <Redirect to="/dashboard" /> : <RegisterPage />}
+        <RegisterPage />
       </Route>
 
       {/* Account status pages */}
