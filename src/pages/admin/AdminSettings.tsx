@@ -157,7 +157,7 @@ export function AdminSettings() {
           <CardTitle className="text-white flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-violet-400" /> OTP Delivery</CardTitle>
           <CardDescription className="text-white/40">
             OTPs are generated and sent by a Supabase Edge Function. Keys are stored in Supabase server-only secrets and hidden after saving. The selected provider below is the one used for registration OTP emails.
-            {(appSettings.otp_provider === 'braze' ? braze.configured : brevo.configured) && <span className="text-emerald-400 ml-1">Provider configured.</span>
+            {(appSettings.otp_provider === 'braze' ? braze.configured : brevo.configured) && <span className="text-emerald-400 ml-1">Provider configured.</span>}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
