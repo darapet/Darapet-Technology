@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
-import { supabase, ADMIN_EMAIL } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import type { Profile, AppUser } from '@/types/database';
 
 interface AuthContextValue {
@@ -24,7 +24,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [appUser, setAppUser] = useState<AppUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const isAdmin = user?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  // Admin access is granted by the database-backed profile flag. The RLS
+  // migration bootstraps the existing owner account once, but authorization
+  // remains revocable without shipping a new frontend bundle.
+  const isAdmin = profile?.is_admin === true;
   const isOnboarded = !!profile?.name;
 
   const loadProfile = useCallback(async (userId: string) => {

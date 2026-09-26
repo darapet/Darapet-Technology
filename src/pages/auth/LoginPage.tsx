@@ -20,12 +20,19 @@ export function LoginPage() {
     e.preventDefault();
     setError('');
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) {
       setError(error.message);
     } else {
-      setLocation('/dashboard');
+      // Let the database-backed admin flag decide the destination. Never use
+      // the password or a client-only email comparison as authorization.
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_admin')
+        .eq('id', data.user.id)
+        .maybeSingle();
+      setLocation(profile?.is_admin ? '/admin' : '/dashboard');
     }
   };
 

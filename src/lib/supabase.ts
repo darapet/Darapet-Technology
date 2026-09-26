@@ -17,5 +17,3 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true,
   },
 });
-
-export const ADMIN_EMAIL = 'Daramolapeter98@gmail.com';
