@@ -19,7 +19,7 @@ export function LegalLayout({ title, intro, children }: LegalLayoutProps) {
         <nav className="flex items-center justify-between" aria-label="Legal navigation">
           <a href={homeUrl} className="flex items-center gap-2 font-semibold tracking-tight text-slate-950 hover:text-blue-700">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-700 text-sm font-bold text-white shadow-lg shadow-blue-600/20">D</span>
-            Darapet
+            dearapet lead engine
           </a>
           <div className="flex items-center gap-4 text-sm text-slate-500">
             <a href={privacyUrl} className="transition-colors hover:text-blue-700">Privacy</a>
