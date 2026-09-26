@@ -1,3 +1,4 @@
+// Pages deployment sync: keep the latest OTP controls in the hosted bundle.
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { Settings, AppSettings, EmailLimitRule } from '@/types/database';
