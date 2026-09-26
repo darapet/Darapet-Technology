@@ -4,10 +4,10 @@ export function TermsPage() {
   return (
     <LegalLayout
       title="Terms and Conditions"
-      intro="These Terms and Conditions govern your use of the Darapet application and its connected Gmail features."
+      intro="These Terms and Conditions govern your use of the dearapet lead engine application and its connected Gmail features."
     >
       <h2>1. Accepting these terms</h2>
-      <p>By creating an account or using Darapet, you agree to these Terms and Conditions and to the Privacy Policy. If you do not agree, do not use the service.</p>
+      <p>By creating an account or using dearapet lead engine, you agree to these Terms and Conditions and to the Privacy Policy. If you do not agree, do not use the service.</p>
 
       <h2>2. The Darapet service</h2>
       <p>Darapet provides tools for organizing campaigns, scouting, scheduling, and sending email. Features may change, be limited, or become unavailable as the service develops.</p>
