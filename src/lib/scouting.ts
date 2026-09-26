@@ -138,6 +138,13 @@ export async function extractLeadsFromFile(file: File) {
   const sourceFileName = file.name;
   if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
     const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    // PDF.js does not guess the worker location in a browser build. Without
+    // this, importing any PDF fails with "No GlobalWorkerOptions.workerSrc
+    // specified" before the file can be read.
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+      'pdfjs-dist/legacy/build/pdf.worker.mjs',
+      import.meta.url,
+    ).toString();
     const loadingTask = pdfjs.getDocument({
       data: new Uint8Array(await file.arrayBuffer()),
     });
