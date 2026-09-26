@@ -18,6 +18,9 @@ export type ScoutLead = {
   send_status: 'not_sent' | 'sending' | 'sent' | 'failed';
   sent_at?: string | null;
   source_file_name?: string | null;
+  source_file_path?: string | null;
+  source_file_type?: string | null;
+  source_file_size?: number | null;
   created_at?: string;
 };
 
@@ -41,16 +44,14 @@ function splitLine(line: string) {
     .filter(Boolean);
 }
 
-function leadFromLine(line: string): Partial<ScoutLead> | null {
+function leadFromLine(line: string, rowNumber: number): Partial<ScoutLead> {
   const email = line.match(EMAIL_RE)?.[0]?.toLowerCase() || '';
-  if (!email) return null;
-
   const url = line.match(URL_RE)?.[0] || '';
   const fields = splitLine(line);
   const nonContactFields = fields.filter(field => !EMAIL_RE.test(field) && !URL_RE.test(field));
 
   return {
-    business_name: nonContactFields[0] || '',
+    business_name: nonContactFields[0] || `Imported row ${rowNumber}`,
     app_name: nonContactFields[1] || '',
     owner_name: nonContactFields[2] || '',
     email,
@@ -83,40 +84,33 @@ function emptyLead(partial: Partial<ScoutLead>, sourceFileName?: string): ScoutL
   };
 }
 
-function dedupeLeads(leads: ScoutLead[]) {
-  const seen = new Set<string>();
-  return leads.filter(lead => {
-    const key = lead.email || `${lead.business_name}:${lead.website}`.toLowerCase();
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
 export function parseLeadText(text: string, sourceFileName?: string): ScoutLead[] {
   const trimmed = text.trim();
   if (!trimmed) return [];
 
-  // ChatGPT exports are often JSON even when saved with a .txt extension.
+  // JSON exports can contain any fields. Keep the complete row in source_notes
+  // instead of throwing away fields that the lead UI does not understand yet.
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
     try {
       const parsed = JSON.parse(trimmed);
-      const rows = Array.isArray(parsed) ? parsed : (parsed.leads || parsed.contacts || parsed.data || []);
-      if (Array.isArray(rows)) {
-        const jsonLeads = rows.map(row => {
-          const value = row as Record<string, unknown>;
+      const nestedRows = !Array.isArray(parsed) && parsed && typeof parsed === 'object'
+        ? (parsed.leads || parsed.contacts || parsed.data || parsed.rows)
+        : null;
+      const rows = Array.isArray(parsed) ? parsed : Array.isArray(nestedRows) ? nestedRows : [parsed];
+      if (rows.length) {
+        return rows.map((row, index) => {
+          const value = row && typeof row === 'object' ? row as Record<string, unknown> : {};
           const email = clean(value.email || value.email_address).toLowerCase();
           return emptyLead({
-            business_name: clean(value.business_name || value.company || value.business || value.name),
+            business_name: clean(value.business_name || value.company || value.business || value.name) || `Imported row ${index + 1}`,
             app_name: clean(value.app_name || value.app),
             owner_name: clean(value.owner_name || value.owner || value.contact_name),
             email,
             website: normalizeUrl(clean(value.website || value.url || value.website_url)),
             source_url: normalizeUrl(clean(value.source_url || value.source)),
-            source_notes: clean(value.notes || value.description),
+            source_notes: typeof row === 'string' ? row : JSON.stringify(row, null, 2),
           }, sourceFileName);
-        }).filter(lead => lead.email);
-        if (jsonLeads.length) return dedupeLeads(jsonLeads);
+        });
       }
     } catch {
       // Fall through to line parsing for malformed or mixed JSON/text.
@@ -124,14 +118,10 @@ export function parseLeadText(text: string, sourceFileName?: string): ScoutLead[
   }
 
   const lines = trimmed.split(/\r?\n/).map(clean).filter(Boolean);
-  const looksLikeHeader = /email|website|company|business|owner|contact/i.test(lines[0] || '');
-  const leads = lines
+  const looksLikeHeader = /email|website|company|business|owner|contact|name|phone|address/i.test(lines[0] || '');
+  return lines
     .slice(looksLikeHeader ? 1 : 0)
-    .map(line => leadFromLine(line))
-    .filter((lead): lead is Partial<ScoutLead> => Boolean(lead?.email))
-    .map(lead => emptyLead(lead, sourceFileName));
-
-  return dedupeLeads(leads);
+    .map((line, index) => emptyLead(leadFromLine(line, index + 1), sourceFileName));
 }
 
 export async function extractLeadsFromFile(file: File) {
@@ -155,10 +145,33 @@ export async function extractLeadsFromFile(file: File) {
       const content = await page.getTextContent();
       pages.push(content.items.map(item => ('str' in item ? item.str : '')).join(' '));
     }
-    return parseLeadText(pages.join('\n'), sourceFileName);
+    const extractedText = pages.join('\n');
+    return extractedText.trim()
+      ? parseLeadText(extractedText, sourceFileName)
+      : [emptyLead({
+        business_name: sourceFileName,
+        source_notes: 'This PDF has no selectable text. The original file was stored and can be opened from this record.',
+      }, sourceFileName)];
   }
 
-  return parseLeadText(await file.text(), sourceFileName);
+  const isTextLike = file.type.startsWith('text/')
+    || ['application/json', 'application/csv', 'application/xml'].includes(file.type)
+    || /\.(csv|json|txt|tsv|xml|html?)$/i.test(file.name);
+  if (isTextLike) {
+    const text = await file.text();
+    const parsedRows = parseLeadText(text, sourceFileName);
+    return parsedRows.length
+      ? parsedRows
+      : [emptyLead({
+        business_name: sourceFileName,
+        source_notes: 'The file was stored, but it did not contain readable rows.',
+      }, sourceFileName)];
+  }
+
+  return [emptyLead({
+    business_name: sourceFileName,
+    source_notes: 'This file type is stored as-is. Open the original file from this record to view its contents.',
+  }, sourceFileName)];
 }
 
 export function toHtmlEmail(body: string) {
