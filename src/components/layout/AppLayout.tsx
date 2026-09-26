@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { useState } from 'react';
 
 const NAV_ITEMS = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard, exact: true },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { href: '/campaigns', label: 'Campaigns', icon: Mail },
   { href: '/campaigns/history', label: 'History', icon: History },
   { href: '/campaigns/automation', label: 'Automation', icon: Zap },
@@ -32,12 +32,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <header className="border-b border-border/50 bg-background/95 backdrop-blur sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 h-14 flex items-center gap-4">
           {/* Logo */}
-          <Link href="/">
+          <Link href="/dashboard">
             <a className="flex items-center gap-2 font-bold text-lg shrink-0">
               <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
                 <span className="text-primary-foreground text-xs font-bold">D</span>
               </div>
-              <span className="hidden sm:block">Darapet</span>
+              <span className="hidden sm:block">dearapet lead engine</span>
             </a>
           </Link>
 
