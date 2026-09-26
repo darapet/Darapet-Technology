@@ -112,7 +112,7 @@ export function AdminSettings() {
       setBrazeDirty(false);
       setBrevoDirty(false);
       setDeletedRuleIds([]);
-      toast({ title: 'Settings saved', description: 'Platform settings and Braze OTP configuration have been updated.' });
+      toast({ title: 'Settings saved', description: 'Platform settings and OTP provider configuration have been updated.' });
     }
   };
 
@@ -156,8 +156,8 @@ export function AdminSettings() {
         <CardHeader>
           <CardTitle className="text-white flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-violet-400" /> OTP Delivery</CardTitle>
           <CardDescription className="text-white/40">
-            OTPs are generated and sent by a Supabase Edge Function. Provider API keys are never returned to this page.
-            {(appSettings.otp_provider === 'braze' ? braze.configured : brevo.configured) && <span className="text-emerald-400 ml-1">Provider configured.</span>}
+            OTPs are generated and sent by a Supabase Edge Function. Keys are stored in Supabase server-only secrets and hidden after saving. The selected provider below is the one used for registration OTP emails.
+            {(appSettings.otp_provider === 'braze' ? braze.configured : brevo.configured) && <span className="text-emerald-400 ml-1">Provider configured.</span>
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -197,7 +197,7 @@ export function AdminSettings() {
               <div className="space-y-2">
                 <Label className="text-white/70">Brevo API Key</Label>
                 <Input value={brevo.apiKey} onChange={e => { setBrevoDirty(true); setBrevo(prev => ({ ...prev, apiKey: e.target.value })); }}
-                  placeholder={brevo.configured ? 'Leave blank to keep the saved key' : 'Enter Brevo API key'} type="password"
+                  placeholder={brevo.configured ? 'Saved securely — leave blank to keep it' : 'Enter Brevo API key'} type="password"
                   className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
                 <p className="text-xs text-white/30">Use Brevo’s free-tier API key. It stays in Supabase server secrets.</p>
               </div>
@@ -219,7 +219,7 @@ export function AdminSettings() {
               <div className="space-y-2">
                 <Label className="text-white/70">Braze REST API Key</Label>
                 <Input value={braze.apiKey} onChange={e => { setBrazeDirty(true); setBraze(prev => ({ ...prev, apiKey: e.target.value })); }}
-                  placeholder={braze.configured ? 'Leave blank to keep the saved key' : 'Enter API key'} type="password"
+                  placeholder={braze.configured ? 'Saved securely — leave blank to keep it' : 'Enter API key'} type="password"
                   className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
@@ -249,7 +249,7 @@ export function AdminSettings() {
             </>
           )}
           <p className="text-xs text-white/30 flex items-start gap-1">
-            <Info className="w-3 h-3 mt-0.5 shrink-0" /> Deploy the <code>admin-secrets</code> and <code>admin-send-otp</code> Supabase Edge Functions before testing delivery, then enable OTP and save.
+            <Info className="w-3 h-3 mt-0.5 shrink-0" /> The API key clears from the form after saving by design; a green “Provider configured” label confirms the server kept it. Deploy the <code>admin-secrets</code> and <code>admin-send-otp</code> Edge Functions before testing delivery.
           </p>
         </CardContent>
       </Card>
@@ -258,18 +258,9 @@ export function AdminSettings() {
       <Card className="bg-white/5 border-white/5">
         <CardHeader>
           <CardTitle className="text-white flex items-center gap-2"><Mail className="w-5 h-5 text-blue-400" /> Email (OTP & Outreach)</CardTitle>
-          <CardDescription className="text-white/40">Brevo API key used for sending OTP verification emails and platform notifications</CardDescription>
+          <CardDescription className="text-white/40">General platform email defaults. Registration OTP credentials are managed once in the OTP Delivery section above.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label className="text-white/70">Brevo API Key</Label>
-            <Input value={settings.brevo_api_key || ''} onChange={e => set('brevo_api_key', e.target.value)}
-              placeholder="xkeysib-..." type="password"
-              className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
-            <p className="text-xs text-white/30 flex items-start gap-1">
-              <Info className="w-3 h-3 mt-0.5 shrink-0" /> Get this from brevo.com → Settings → API Keys. This key is used for sending OTP emails on registration.
-            </p>
-          </div>
           <div className="space-y-2">
             <Label className="text-white/70">Platform Brand Name</Label>
             <Input value={settings.brand_name || ''} onChange={e => set('brand_name', e.target.value)}
