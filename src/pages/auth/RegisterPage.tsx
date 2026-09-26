@@ -16,6 +16,46 @@ export function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [verificationStep, setVerificationStep] = useState(false);
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verificationEmail, setVerificationEmail] = useState('');
+  const [registeredUserId, setRegisteredUserId] = useState('');
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (!/^\d{6}$/.test(verificationCode)) {
+      setError('Enter the 6-digit code from your email.');
+      return;
+    }
+
+    setLoading(true);
+    const { data, error: verifyError } = await supabase.functions.invoke('signup-otp', {
+      body: { action: 'verify', userId: registeredUserId, code: verificationCode },
+    });
+    if (verifyError || data?.error) {
+      setError(verifyError?.message || data?.error || 'That code is not valid.');
+      setLoading(false);
+      return;
+    }
+
+    setLoading(false);
+    setLocation('/settings');
+  };
+
+  const handleResendOtp = async () => {
+    setError('');
+    setLoading(true);
+    const { data, error: resendError } = await supabase.functions.invoke('signup-otp', {
+      body: { action: 'send', userId: registeredUserId, email: verificationEmail },
+    });
+    if (resendError || data?.error) {
+      setError(resendError?.message || data?.error || 'Unable to resend the code.');
+    } else {
+      setError('A new verification code was sent.');
+    }
+    setLoading(false);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,21 +75,37 @@ export function RegisterPage() {
     if (signUpError) { setError(signUpError.message); setLoading(false); return; }
 
     const userId = data.user?.id;
-    if (userId) {
-      const trimmedName = name.trim();
-      // Save the name immediately so the app knows this user is onboarded later
-      await supabase.from('profiles').upsert({ id: userId, name: trimmedName, email }, { onConflict: 'id' });
+    if (!userId) {
+      setError('Account creation did not return a user. Please try again.');
+      setLoading(false);
+      return;
+    }
 
-      // Also create the app_users row so the admin dashboard/user list picks
-      // up the new signup right away — this used to only happen at the end
-      // of the (now-removed) onboarding wizard.
-      await supabase.from('app_users').upsert({
-        auth_user_id: userId,
-        email,
-        first_name: trimmedName.split(' ')[0] || trimmedName,
-        last_name: trimmedName.split(' ').slice(1).join(' ') || '',
-        status: 'active',
-      }, { onConflict: 'auth_user_id' });
+    const trimmedName = name.trim();
+    await supabase.from('profiles').upsert({ id: userId, name: trimmedName, email }, { onConflict: 'id' });
+    await supabase.from('app_users').upsert({
+      auth_user_id: userId,
+      email,
+      first_name: trimmedName.split(' ')[0] || trimmedName,
+      last_name: trimmedName.split(' ').slice(1).join(' ') || '',
+      status: 'active',
+    }, { onConflict: 'auth_user_id' });
+
+    const { data: otpData, error: otpError } = await supabase.functions.invoke('signup-otp', {
+      body: { action: 'send', userId, email },
+    });
+    if (otpError || otpData?.error) {
+      setError(otpError?.message || otpData?.error || 'Your account was created, but the verification code could not be sent.');
+      setLoading(false);
+      return;
+    }
+
+    if (otpData?.enabled) {
+      setRegisteredUserId(userId);
+      setVerificationEmail(email);
+      setVerificationStep(true);
+      setLoading(false);
+      return;
     }
 
     setLoading(false);
@@ -79,24 +135,47 @@ export function RegisterPage() {
 
         <Card className="border border-white/10 bg-white/[0.06] backdrop-blur-xl shadow-2xl shadow-black/40">
           <CardHeader className="pb-2">
-            <CardTitle className="text-white text-xl">Get started</CardTitle>
-            <CardDescription className="text-blue-200/70">Fill in your details to create your account</CardDescription>
+            <CardTitle className="text-white text-xl">{verificationStep ? 'Verify your email' : 'Get started'}</CardTitle>
+            <CardDescription className="text-blue-200/70">{verificationStep ? 'Enter the code we sent before continuing' : 'Fill in your details to create your account'}</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            {verificationStep ? (
+              <form onSubmit={handleVerifyOtp} className="space-y-4">
+                <p className="text-sm text-blue-100/80">We sent a 6-digit verification code to <strong className="text-white">{verificationEmail}</strong>.</p>
+                <div className="space-y-1.5">
+                  <Label className="text-blue-100 text-sm">Verification code</Label>
+                  <Input
+                    value={verificationCode}
+                    onChange={e => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder="000000"
+                    maxLength={6}
+                    required
+                    className="text-center tracking-[0.5em] bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:border-blue-400"
+                  />
+                </div>
+                {error && (
+                  <p className={error.startsWith('A new') ? 'text-emerald-300 text-sm bg-emerald-400/10 border border-emerald-400/20 rounded-lg px-3 py-2' : 'text-red-400 text-sm bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2'}>{error}</p>
+                )}
+                <Button type="submit" disabled={loading || verificationCode.length !== 6} className="w-full h-11 font-semibold text-white bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-400 hover:to-indigo-500">
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                  {loading ? 'Checking code…' : 'Verify email →'}
+                </Button>
+                <div className="flex items-center justify-between text-sm">
+                  <button type="button" onClick={handleResendOtp} disabled={loading} className="text-blue-300 hover:text-white disabled:opacity-50">Resend code</button>
+                  <button type="button" onClick={() => { setVerificationStep(false); setVerificationCode(''); setError(''); }} className="text-blue-200/60 hover:text-white">Back</button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-4">
 
               {/* Name */}
               <div className="space-y-1.5">
                 <Label className="text-blue-100 text-sm">Full Name</Label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-300/60" />
-                  <Input
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    placeholder="John Doe"
-                    required
-                    className="pl-9 bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:border-blue-400 focus:bg-white/15"
-                  />
+                  <Input value={name} onChange={e => setName(e.target.value)} placeholder="John Doe" required className="pl-9 bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:border-blue-400 focus:bg-white/15" />
                 </div>
               </div>
 
@@ -105,14 +184,7 @@ export function RegisterPage() {
                 <Label className="text-blue-100 text-sm">Email</Label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-300/60" />
-                  <Input
-                    type="email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    required
-                    className="pl-9 bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:border-blue-400 focus:bg-white/15"
-                  />
+                  <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" required className="pl-9 bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:border-blue-400 focus:bg-white/15" />
                 </div>
               </div>
 
@@ -121,25 +193,15 @@ export function RegisterPage() {
                 <Label className="text-blue-100 text-sm">Password</Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-300/60" />
-                  <Input
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    placeholder="Min. 8 characters"
-                    required
-                    className="pl-9 pr-10 bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:border-blue-400 focus:bg-white/15"
-                  />
-                  <button type="button" onClick={() => setShowPassword(v => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-300/60 hover:text-blue-200">
+                  <Input type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Min. 8 characters" required className="pl-9 pr-10 bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:border-blue-400 focus:bg-white/15" />
+                  <button type="button" onClick={() => setShowPassword(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-300/60 hover:text-blue-200">
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
 
               {error && (
-                <p className="text-red-400 text-sm bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
-                  {error}
-                </p>
+                <p className="text-red-400 text-sm bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">{error}</p>
               )}
 
               <Button type="submit" disabled={loading} className="w-full h-11 font-semibold text-white bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-400 hover:to-indigo-500 shadow-lg shadow-blue-600/25 transition-all hover:shadow-blue-500/40 mt-2">
@@ -149,13 +211,10 @@ export function RegisterPage() {
 
               <p className="text-center text-sm text-blue-200/60 pt-1">
                 Already have an account?{' '}
-                <button type="button" onClick={() => setLocation('/login')}
-                  className="text-blue-400 hover:text-blue-300 font-medium underline underline-offset-2">
-                  Sign in
-                </button>
+                <button type="button" onClick={() => setLocation('/login')} className="text-blue-400 hover:text-blue-300 font-medium underline underline-offset-2">Sign in</button>
               </p>
-
-            </form>
+              </form>
+            )}
           </CardContent>
         </Card>
       <p className="mt-6 text-center text-xs leading-5 text-blue-200/50">
