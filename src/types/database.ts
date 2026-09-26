@@ -526,6 +526,66 @@ export type Database = {
         };
         Relationships: NoRelationships;
       };
+      user_assets: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          original_filename: string;
+          asset_type: string;
+          mime_type: string;
+          size_bytes: number;
+          cloudinary_public_id: string;
+          cloudinary_url: string;
+          cloudinary_resource_type: string;
+          cloudinary_format: string | null;
+          cloudinary_bytes: number | null;
+          cloudinary_width: number | null;
+          cloudinary_height: number | null;
+          cloudinary_duration: number | null;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          original_filename: string;
+          asset_type: string;
+          mime_type: string;
+          size_bytes: number;
+          cloudinary_public_id: string;
+          cloudinary_url: string;
+          cloudinary_resource_type: string;
+          cloudinary_format?: string | null;
+          cloudinary_bytes?: number | null;
+          cloudinary_width?: number | null;
+          cloudinary_height?: number | null;
+          cloudinary_duration?: number | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          name?: string;
+          original_filename?: string;
+          asset_type?: string;
+          mime_type?: string;
+          size_bytes?: number;
+          cloudinary_public_id?: string;
+          cloudinary_url?: string;
+          cloudinary_resource_type?: string;
+          cloudinary_format?: string | null;
+          cloudinary_bytes?: number | null;
+          cloudinary_width?: number | null;
+          cloudinary_height?: number | null;
+          cloudinary_duration?: number | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Relationships: NoRelationships;
+      };
       app_settings: {
         Row: {
           id: number;
@@ -646,6 +706,7 @@ export type EmailSend = Database['public']['Tables']['email_sends']['Row'];
 export type EmailTemplate = Database['public']['Tables']['email_templates']['Row'];
 export type ScheduledSend = Database['public']['Tables']['scheduled_sends']['Row'];
 export type Settings = Database['public']['Tables']['settings']['Row'];
+export type UserAsset = Database['public']['Tables']['user_assets']['Row'];
 export type AppSettings = Database['public']['Tables']['app_settings']['Row'];
 export type EmailLimitRule = Database['public']['Tables']['email_limit_rules']['Row'];
 export type ActivityLog = Database['public']['Tables']['activity_logs']['Row'];
