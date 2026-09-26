@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Mail, Search, Key, Info, Image, ShieldCheck } from 'lucide-react';
 
@@ -19,6 +20,13 @@ export function AdminSettings() {
     apiKey: '',
     appId: '',
     restEndpoint: 'https://rest.iad-01.braze.com',
+    fromEmail: '',
+    fromName: 'Darapet Technology',
+    configured: false,
+  });
+  const [brevoDirty, setBrevoDirty] = useState(false);
+  const [brevo, setBrevo] = useState({
+    apiKey: '',
     fromEmail: '',
     fromName: 'Darapet Technology',
     configured: false,
@@ -45,6 +53,12 @@ export function AdminSettings() {
         fromName: brazeData.brazeFromName || prev.fromName,
         configured: Boolean(brazeData.brazeConfigured),
       }));
+      if (brazeData) setBrevo(prev => ({
+        ...prev,
+        fromEmail: brazeData.brevoFromEmail || '',
+        fromName: brazeData.brevoFromName || prev.fromName,
+        configured: Boolean(brazeData.brevoConfigured),
+      }));
       setLoading(false);
     };
     load();
@@ -56,15 +70,19 @@ export function AdminSettings() {
     const { error: err2 } = await supabase.from('app_settings').upsert({ id: 1, ...appSettings, updated_at: new Date().toISOString() });
     let brazeData: { error?: string } | null = null;
     let brazeError: { message: string } | null = null;
-    if (brazeDirty) {
+    if (brazeDirty || brevoDirty) {
       const result = await supabase.functions.invoke('admin-secrets', {
         body: {
           action: 'save',
+          otpProvider: appSettings.otp_provider || 'brevo',
           brazeApiKey: braze.apiKey,
           brazeAppId: braze.appId,
           brazeRestEndpoint: braze.restEndpoint,
           brazeFromEmail: braze.fromEmail,
           brazeFromName: braze.fromName,
+          brevoApiKey: brevo.apiKey,
+          brevoFromEmail: brevo.fromEmail,
+          brevoFromName: brevo.fromName,
         },
       });
       brazeData = result.data;
@@ -81,7 +99,9 @@ export function AdminSettings() {
       toast({ variant: 'destructive', title: 'Error saving settings', description: (error || err2 || brazeError || deletedRulesError || rulesError)?.message || brazeData?.error });
     } else {
       setBraze(prev => ({ ...prev, apiKey: '', configured: brazeDirty ? true : prev.configured }));
+      setBrevo(prev => ({ ...prev, apiKey: '', configured: brevoDirty ? true : prev.configured }));
       setBrazeDirty(false);
+      setBrevoDirty(false);
       setDeletedRuleIds([]);
       toast({ title: 'Settings saved', description: 'Platform settings and Braze OTP configuration have been updated.' });
     }
@@ -116,48 +136,99 @@ export function AdminSettings() {
         <p className="text-white/40 mt-1">Configure email, scraping, and global defaults</p>
       </div>
 
-      {/* Braze / OTP */}
+      {/* OTP delivery */}
       <Card className="bg-white/5 border-white/5">
         <CardHeader>
-          <CardTitle className="text-white flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-violet-400" /> Braze OTP Delivery</CardTitle>
+          <CardTitle className="text-white flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-violet-400" /> OTP Delivery</CardTitle>
           <CardDescription className="text-white/40">
-            OTPs are generated and sent by a Supabase Edge Function. The API key is never returned to this page.
-            {braze.configured && <span className="text-emerald-400 ml-1">Configured.</span>}
+            OTPs are generated and sent by a Supabase Edge Function. Provider API keys are never returned to this page.
+            {(appSettings.otp_provider === 'braze' ? braze.configured : brevo.configured) && <span className="text-emerald-400 ml-1">Provider configured.</span>}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label className="text-white/70">Braze REST API Key</Label>
-            <Input value={braze.apiKey} onChange={e => { setBrazeDirty(true); setBraze(prev => ({ ...prev, apiKey: e.target.value })); }}
-              placeholder={braze.configured ? 'Leave blank to keep the saved key' : 'Enter API key'} type="password"
-              className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+          <div className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 p-4">
+            <div>
+              <p className="font-medium text-white">Enable OTP sending</p>
+              <p className="mt-1 text-xs text-white/40">The Send OTP action stays blocked until this switch is enabled.</p>
+            </div>
+            <Switch
+              checked={appSettings.otp_enabled === true}
+              onCheckedChange={checked => setApp('otp_enabled', checked)}
+              aria-label="Enable OTP sending"
+            />
           </div>
+
           <div className="grid sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label className="text-white/70">Braze App ID</Label>
-              <Input value={braze.appId} onChange={e => { setBrazeDirty(true); setBraze(prev => ({ ...prev, appId: e.target.value })); }}
-                placeholder="Your Braze email app ID" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-white/70">REST Endpoint</Label>
-              <Input value={braze.restEndpoint} onChange={e => { setBrazeDirty(true); setBraze(prev => ({ ...prev, restEndpoint: e.target.value })); }}
-                placeholder="https://rest.iad-01.braze.com" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
-            </div>
-          </div>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-white/70">From Email</Label>
-              <Input type="email" value={braze.fromEmail} onChange={e => { setBrazeDirty(true); setBraze(prev => ({ ...prev, fromEmail: e.target.value })); }}
-                placeholder="no-reply@example.com" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-white/70">From Name</Label>
-              <Input value={braze.fromName} onChange={e => { setBrazeDirty(true); setBraze(prev => ({ ...prev, fromName: e.target.value })); }}
-                placeholder="Darapet Technology" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+              <Label className="text-white/70">OTP Provider</Label>
+              <select
+                value={appSettings.otp_provider || 'brevo'}
+                onChange={e => setApp('otp_provider', e.target.value)}
+                className="flex h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white"
+              >
+                <option value="brevo" className="bg-slate-900">Brevo free tier</option>
+                <option value="braze" className="bg-slate-900">Braze</option>
+              </select>
             </div>
           </div>
+          {appSettings.otp_provider !== 'braze' ? (
+            <>
+              <div className="space-y-2">
+                <Label className="text-white/70">Brevo API Key</Label>
+                <Input value={brevo.apiKey} onChange={e => { setBrevoDirty(true); setBrevo(prev => ({ ...prev, apiKey: e.target.value })); }}
+                  placeholder={brevo.configured ? 'Leave blank to keep the saved key' : 'Enter Brevo API key'} type="password"
+                  className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+                <p className="text-xs text-white/30">Use Brevo’s free-tier API key. It stays in Supabase server secrets.</p>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-white/70">Sender Email</Label>
+                  <Input type="email" value={brevo.fromEmail} onChange={e => { setBrevoDirty(true); setBrevo(prev => ({ ...prev, fromEmail: e.target.value })); }}
+                    placeholder="no-reply@example.com" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-white/70">Sender Name</Label>
+                  <Input value={brevo.fromName} onChange={e => { setBrevoDirty(true); setBrevo(prev => ({ ...prev, fromName: e.target.value })); }}
+                    placeholder="Darapet Technology" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label className="text-white/70">Braze REST API Key</Label>
+                <Input value={braze.apiKey} onChange={e => { setBrazeDirty(true); setBraze(prev => ({ ...prev, apiKey: e.target.value })); }}
+                  placeholder={braze.configured ? 'Leave blank to keep the saved key' : 'Enter API key'} type="password"
+                  className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+              </div>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-white/70">Braze App ID</Label>
+                  <Input value={braze.appId} onChange={e => { setBrazeDirty(true); setBraze(prev => ({ ...prev, appId: e.target.value })); }}
+                    placeholder="Your Braze email app ID" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-white/70">REST Endpoint</Label>
+                  <Input value={braze.restEndpoint} onChange={e => { setBrazeDirty(true); setBraze(prev => ({ ...prev, restEndpoint: e.target.value })); }}
+                    placeholder="https://rest.iad-01.braze.com" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+                </div>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-white/70">From Email</Label>
+                  <Input type="email" value={braze.fromEmail} onChange={e => { setBrazeDirty(true); setBraze(prev => ({ ...prev, fromEmail: e.target.value })); }}
+                    placeholder="no-reply@example.com" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-white/70">From Name</Label>
+                  <Input value={braze.fromName} onChange={e => { setBrazeDirty(true); setBraze(prev => ({ ...prev, fromName: e.target.value })); }}
+                    placeholder="Darapet Technology" className="bg-white/5 border-white/10 text-white placeholder:text-white/30" />
+                </div>
+              </div>
+            </>
+          )}
           <p className="text-xs text-white/30 flex items-start gap-1">
-            <Info className="w-3 h-3 mt-0.5 shrink-0" /> Deploy the <code>admin-secrets</code> and <code>admin-send-otp</code> Supabase Edge Functions before testing delivery.
+            <Info className="w-3 h-3 mt-0.5 shrink-0" /> Deploy the <code>admin-secrets</code> and <code>admin-send-otp</code> Supabase Edge Functions before testing delivery, then enable OTP and save.
           </p>
         </CardContent>
       </Card>
