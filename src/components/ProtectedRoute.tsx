@@ -46,6 +46,10 @@ export function ProtectedRoute({ children, adminOnly = false }: ProtectedRoutePr
 
   if (!user) return <Redirect to="/login" />;
 
+  if (appUser && appUser.signup_otp_verified_at === null) {
+    return <Redirect to="/register" />;
+  }
+
   if (status && status !== 'active' && !expired) {
     if (status === 'banned') return <Redirect to="/banned" />;
     if (status === 'restricted') return <Redirect to="/restricted" />;
