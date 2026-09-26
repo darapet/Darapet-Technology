@@ -34,35 +34,43 @@ export function AdminSettings() {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
     const load = async () => {
-      const [s, a, rules] = await Promise.all([
-        supabase.from('settings').select('*').eq('id', 1).single(),
-        supabase.from('app_settings').select('*').eq('id', 1).single(),
-        supabase.from('email_limit_rules').select('*').order('min_account_age_days', { ascending: true }),
-      ]);
-      if (s.data) setSettings(s.data);
-      if (a.data) setAppSettings(a.data);
-      if (rules.data) setLimitRules(rules.data);
-      const { data: brazeData } = await supabase.functions.invoke('admin-secrets', { body: { action: 'get' } });
-      if (brazeData) setBraze(prev => ({
-        ...prev,
-        appId: brazeData.brazeAppId || '',
-        restEndpoint: brazeData.brazeRestEndpoint || prev.restEndpoint,
-        fromEmail: brazeData.brazeFromEmail || '',
-        fromName: brazeData.brazeFromName || prev.fromName,
-        configured: Boolean(brazeData.brazeConfigured),
-      }));
-      if (brazeData) setBrevo(prev => ({
-        ...prev,
-        fromEmail: brazeData.brevoFromEmail || '',
-        fromName: brazeData.brevoFromName || prev.fromName,
-        configured: Boolean(brazeData.brevoConfigured),
-      }));
-      setLoading(false);
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const [s, a, rules] = await Promise.all([
+          supabase.from('settings').select('*').eq('id', 1).single(),
+          supabase.from('app_settings').select('*').eq('id', 1).single(),
+          supabase.from('email_limit_rules').select('*').order('min_account_age_days', { ascending: true }),
+        ]);
+        if (cancelled) return;
+        if (s.error && s.error.code !== 'PGRST116') throw s.error;
+        if (a.error && a.error.code !== 'PGRST116') throw a.error;
+        if (rules.error) throw rules.error;
+        if (s.data) setSettings(s.data);
+        if (a.data) setAppSettings(a.data);
+        if (rules.data) setLimitRules(rules.data);
+        try {
+          const { data: secretsData, error: secretsError } = await supabase.functions.invoke('admin-secrets', { body: { action: 'get' } });
+          if (secretsError) throw secretsError;
+          if (secretsData) setBraze(prev => ({ ...prev, appId: secretsData.brazeAppId || '', restEndpoint: secretsData.brazeRestEndpoint || prev.restEndpoint, fromEmail: secretsData.brazeFromEmail || '', fromName: secretsData.brazeFromName || prev.fromName, configured: Boolean(secretsData.brazeConfigured) }));
+          if (secretsData) setBrevo(prev => ({ ...prev, fromEmail: secretsData.brevoFromEmail || '', fromName: secretsData.brevoFromName || prev.fromName, configured: Boolean(secretsData.brevoConfigured) }));
+        } catch (error) {
+          if (!cancelled) setLoadError('Platform settings loaded, but OTP provider status is unavailable: ' + (error instanceof Error ? error.message : 'try refreshing again') + '.');
+        }
+      } catch (error) {
+        if (!cancelled) setLoadError('Could not load platform settings: ' + (error instanceof Error ? error.message : 'try refreshing again') + '.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     };
-    load();
+    void load();
+    return () => { cancelled = true; };
   }, []);
 
   const saveSettings = async () => {
@@ -131,6 +139,12 @@ export function AdminSettings() {
   if (loading) return <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="h-32 bg-white/5 rounded-xl animate-pulse" />)}</div>;
 
   return (
+    <>
+      {loadError && (
+        <div role="alert" className="mb-6 rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">
+          {loadError}
+        </div>
+      )}
     <div className="space-y-6 max-w-3xl">
       <div>
         <h1 className="text-3xl font-bold text-white">Platform Settings</h1>
@@ -403,5 +417,6 @@ export function AdminSettings() {
         Save All Settings
       </Button>
     </div>
+    </>
   );
 }
