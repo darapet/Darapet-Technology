@@ -23,7 +23,8 @@
     /* Restore path encoded by public/404.html (GitHub Pages SPA trick) */
     (function () {
       var p = new URLSearchParams(window.location.search).get('p');
-      if (p) { window.history.replaceState(null, '', '/Darapet-Technology' + p + window.location.hash); }
+      var base = window.location.pathname.startsWith('/Darapet-Technology') ? '/Darapet-Technology' : '';
+      if (p) { window.history.replaceState(null, '', base + p + window.location.hash); }
     })();
     </script>
 </head>
