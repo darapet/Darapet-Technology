@@ -18,6 +18,7 @@ import { SOCIAL_PLATFORMS, SOCIAL_CATEGORIES } from '@/data/socialMedia';
 import { SocialIcon } from '@/data/socialIcons';
 import type { SocialLink } from '@/pages/email/emailTemplates';
 import { uploadImageToCloudinary } from '@/lib/cloudinary';
+import { AssetLibrary } from '@/components/AssetLibrary';
 
 // ─── Secret input ─────────────────────────────────────────────────────────────
 
@@ -378,10 +379,11 @@ export function SettingsPage() {
       </div>
 
       <Tabs defaultValue="profile">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="profile"><User className="w-3 h-3 mr-1" />Profile</TabsTrigger>
           <TabsTrigger value="email"><Mail className="w-3 h-3 mr-1" />Email</TabsTrigger>
           <TabsTrigger value="brand"><Pen className="w-3 h-3 mr-1" />Brand</TabsTrigger>
+          <TabsTrigger value="library"><Upload className="w-3 h-3 mr-1" />Library</TabsTrigger>
         </TabsList>
 
         {/* ── PROFILE TAB ── */}
@@ -593,6 +595,10 @@ export function SettingsPage() {
             onLinksChange={setSocialLinks}
             onWebsiteChange={setWebsiteUrl}
           />
+        </TabsContent>
+
+        <TabsContent value="library" className="space-y-4 mt-4">
+          <AssetLibrary />
         </TabsContent>
       </Tabs>
 
