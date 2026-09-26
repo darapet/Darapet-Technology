@@ -17,6 +17,7 @@ import { RestrictedPage } from '@/pages/auth/RestrictedPage';
 import { Dashboard } from '@/pages/dashboard';
 import { SettingsPage } from '@/pages/settings';
 import NotFound from '@/pages/not-found';
+import { HomePage } from '@/pages/HomePage';
 import { PrivacyPage } from '@/pages/legal/PrivacyPage';
 import { TermsPage } from '@/pages/legal/TermsPage';
 
@@ -60,10 +61,10 @@ function AppRoutes() {
       <Route path="/terms" component={TermsPage} />
       {/* Public auth routes Ã¢ÂÂ redirect away if already signed in */}
       <Route path="/login">
-        {user ? <Redirect to="/" /> : <LoginPage />}
+        {user ? <Redirect to="/dashboard" /> : <LoginPage />}
       </Route>
       <Route path="/register">
-        {user ? <Redirect to="/" /> : <RegisterPage />}
+        {user ? <Redirect to="/dashboard" /> : <RegisterPage />}
       </Route>
 
       {/* Account status pages */}
@@ -108,8 +109,11 @@ function AppRoutes() {
         </ProtectedRoute>
       </Route>
 
+      {/* Public homepage — visible to OAuth reviewers and visitors without an account */}
+      <Route path="/" component={HomePage} />
+
       {/* Protected app routes */}
-      <Route path="/">
+      <Route path="/dashboard">
         <ProtectedRoute>
           <AppLayout><Dashboard /></AppLayout>
         </ProtectedRoute>
