@@ -38,19 +38,80 @@ Deno.serve(async (req) => {
     if (recipientError) throw new Error(recipientError.message);
     if (!recipient?.email) return json({ error: "This account has no email address." }, 400);
 
-    const [apiKey, appId, endpoint, fromEmail, fromName] = await Promise.all([
-      getSecret(admin, "braze_api_key"),
-      getSecret(admin, "braze_app_id"),
-      getSecret(admin, "braze_rest_endpoint"),
-      getSecret(admin, "braze_from_email"),
-      getSecret(admin, "braze_from_name"),
-    ]);
-    if (!apiKey || !appId || !endpoint || !fromEmail) {
-      return json({ error: "Braze is not configured. Add it in Admin Settings first." }, 400);
+    const { data: otpSettings, error: otpSettingsError } = await admin
+      .from("app_settings")
+      .select("otp_enabled, otp_provider")
+      .eq("id", 1)
+      .maybeSingle();
+    if (otpSettingsError) throw new Error(otpSettingsError.message);
+    if (!otpSettings?.otp_enabled) {
+      return json({ error: "OTP sending is disabled. Enable it in Admin Settings first." }, 409);
     }
 
     const code = randomOtp();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const html = `<html><body><p>Hello ${escapeHtml(recipient.first_name || "there")},</p><p>Your Darapet verification code is:</p><p style="font-size:28px;font-weight:700;letter-spacing:8px">${code}</p><p>This code expires in 10 minutes.</p></body></html>`;
+    const provider = otpSettings.otp_provider === "braze" ? "braze" : "brevo";
+    let response: Response;
+
+    if (provider === "brevo") {
+      const [apiKey, fromEmail, fromName] = await Promise.all([
+        getSecret(admin, "brevo_api_key"),
+        getSecret(admin, "brevo_from_email"),
+        getSecret(admin, "brevo_from_name"),
+      ]);
+      if (!apiKey || !fromEmail) {
+        return json({ error: "Brevo is not configured. Add it in Admin Settings first." }, 400);
+      }
+      response = await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: {
+          "api-key": apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sender: { name: fromName || "Darapet Technology", email: fromEmail },
+          to: [{ email: recipient.email, name: recipient.first_name || undefined }],
+          subject: "Your Darapet verification code",
+          htmlContent: html,
+        }),
+      });
+    } else {
+      const [apiKey, appId, endpoint, fromEmail, fromName] = await Promise.all([
+        getSecret(admin, "braze_api_key"),
+        getSecret(admin, "braze_app_id"),
+        getSecret(admin, "braze_rest_endpoint"),
+        getSecret(admin, "braze_from_email"),
+        getSecret(admin, "braze_from_name"),
+      ]);
+      if (!apiKey || !appId || !endpoint || !fromEmail) {
+        return json({ error: "Braze is not configured. Add it in Admin Settings first." }, 400);
+      }
+      response = await fetch(`${endpoint.replace(/\/$/, "")}/messages/send`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: {
+            email: {
+              app_id: appId,
+              subject: "Your Darapet verification code",
+              from: `${fromName || "Darapet Technology"} <${fromEmail}>`,
+              recipients: [{ email: recipient.email }],
+              body: html,
+            },
+          },
+        }),
+      });
+    }
+
+    if (!response.ok) {
+      const detail = await response.text();
+      return json({ error: `${provider === "brevo" ? "Brevo" : "Braze"} rejected the message: ${detail.slice(0, 300)}` }, 502);
+    }
+
     const { error: challengeError } = await admin.from("admin_otp_challenges").insert({
       app_user_id: recipient.id,
       auth_user_id: recipient.auth_user_id,
@@ -61,32 +122,9 @@ Deno.serve(async (req) => {
     });
     if (challengeError) throw new Error(challengeError.message);
 
-    const response = await fetch(`${endpoint.replace(/\/$/, "")}/messages/send`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messages: {
-          email: {
-            app_id: appId,
-            subject: "Your Darapet verification code",
-            from: `${fromName || "Darapet Technology"} <${fromEmail}>`,
-            recipients: [{ email: recipient.email }],
-            body: `<html><body><p>Hello ${escapeHtml(recipient.first_name || "there")},</p><p>Your Darapet verification code is:</p><p style="font-size:28px;font-weight:700;letter-spacing:8px">${code}</p><p>This code expires in 10 minutes.</p></body></html>`,
-          },
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      const detail = await response.text();
-      return json({ error: `Braze rejected the message: ${detail.slice(0, 300)}` }, 502);
-    }
-
     return json({
       sent: true,
+      provider,
       recipient: recipient.email.replace(/^(.{2}).*(@.*)$/, "$1••••$2"),
       expiresAt,
     });
