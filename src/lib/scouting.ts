@@ -389,8 +389,6 @@ export async function extractLeadsFromFile(file: File) {
         if (!Array.isArray(transform)) return;
         items.push({ str: item.str.trim(), x: Number(transform[4] || 0), y: Number(transform[5] || 0) });
       });
-      pages.push(items.map(item => item.str).join(' '));
-
       const rows: Array<{ y: number; items: PdfTextItem[] }> = [];
       for (const item of items) {
         const row = rows.find(candidate => Math.abs(candidate.y - item.y) < 4);
@@ -398,6 +396,7 @@ export async function extractLeadsFromFile(file: File) {
         else rows.push({ y: item.y, items: [item] });
       }
       rows.sort((left, right) => right.y - left.y);
+      pages.push(rows.map(row => [...row.items].sort((left, right) => left.x - right.x).map(item => item.str).join('\t')).join('\n'));
 
       const headerRow = rows.find(row => {
         const values = row.items.map(item => headerKey(item.str));
@@ -433,7 +432,7 @@ export async function extractLeadsFromFile(file: File) {
       }
     }
     const extractedText = pages.join('\n');
-    const parsedRows = tableRows.length ? parseLeadText(tableRows.join('\n'), sourceFileName) : extractedText.trim() ? parseLeadText(extractedText, sourceFileName) : [];
+    const parsedRows = tableRows.length ? parsePastedLeads(tableRows.join('\n'), sourceFileName) : extractedText.trim() ? parsePastedLeads(extractedText, sourceFileName) : [];
     return parsedRows.length
       ? parsedRows
       : [emptyLead({
@@ -449,7 +448,7 @@ export async function extractLeadsFromFile(file: File) {
     || /\.(csv|json|txt|tsv|xml|html?)$/i.test(file.name);
   if (isTextLike) {
     const text = await file.text();
-    const parsedRows = parseLeadText(text, sourceFileName);
+    const parsedRows = parsePastedLeads(text, sourceFileName);
     return parsedRows.length
       ? parsedRows
       : [emptyLead({
