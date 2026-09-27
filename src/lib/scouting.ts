@@ -247,6 +247,117 @@ export function parseLeadText(text: string, sourceFileName?: string): ScoutLead[
   return rows.map((row, index) => leadFromFields(row, index + 1, sourceFileName));
 }
 
+
+function listValue(value: unknown) {
+  if (Array.isArray(value)) return value.map(clean).filter(Boolean);
+  const raw = clean(value);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.map(clean).filter(Boolean);
+  } catch {
+    // Continue with human-friendly separators.
+  }
+  return raw.split(/\s*(?:\r?\n|\||;)\s*/).map(clean).filter(Boolean);
+}
+
+function structuredLeadFromObject(row: Record<string, unknown>, rowNumber: number, sourceFileName = 'ChatGPT pasted leads') {
+  const base = leadFromObject(row, rowNumber, sourceFileName);
+  const rawData = objectToRawData(row);
+  const value = (aliases: readonly string[]) => objectValue(rawData, aliases);
+  const website = normalizeUrl(value(HEADER_ALIASES.website)) || base.website;
+  const websiteName = value(['websitename', 'sitetitle', 'pagetitle', 'title']);
+  const ownerName = value(['ownername', 'owner', 'contactname', 'contact', 'fullname', 'name', 'founder', 'foundername']) || base.owner_name;
+  const description = value(['description', 'websitedescription', 'businessdescription', 'summary', 'about']);
+  const merits = listValue(value(['merit', 'merits', 'strengths', 'pros', 'advantages']));
+  const demerits = listValue(value(['demerit', 'demerits', 'weaknesses', 'cons', 'problems', 'painpoints']));
+  const concentration = value(['concentration', 'areaofconcentration', 'focus', 'businessfocus', 'industry', 'niche']);
+  const improvements = listValue(value(['improvement', 'improvements', 'areasforimprovement', 'recommendations', 'opportunities']));
+  const contactHints = listValue(value(['contacthint', 'contacthints', 'contactdetails', 'publiccontacthints']));
+  const snapshot: ResearchSnapshot = {
+    leadId: base.id,
+    website,
+    status: 'complete',
+    success: true,
+    httpStatus: null,
+    statusText: 'Provided by user',
+    title: websiteName,
+    websiteName: websiteName || base.business_name,
+    ownerName,
+    description,
+    merits,
+    demerits,
+    concentration,
+    improvements,
+    contactHints,
+    analyzedAt: new Date().toISOString(),
+  };
+  return {
+    ...base,
+    website,
+    owner_name: ownerName,
+    research_status: 'researched' as const,
+    research_summary: [snapshot.websiteName, snapshot.description, snapshot.concentration].filter(Boolean).join(' — ') || 'Research supplied with pasted lead.',
+    pain_points: demerits,
+    research_data: snapshot,
+  };
+}
+
+function markdownTableCells(line: string) {
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(clean);
+}
+
+export function parsePastedLeads(text: string, sourceFileName = 'ChatGPT pasted leads'): ScoutLead[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      const nestedRows = !Array.isArray(parsed) && parsed && typeof parsed === 'object'
+        ? (parsed.leads || parsed.contacts || parsed.data || parsed.rows)
+        : null;
+      const rows = Array.isArray(parsed) ? parsed : Array.isArray(nestedRows) ? nestedRows : [parsed];
+      return rows.map((row, index) => row && typeof row === 'object'
+        ? structuredLeadFromObject(row as Record<string, unknown>, index + 1, sourceFileName)
+        : null).filter((lead): lead is ScoutLead => Boolean(lead));
+    } catch {
+      // Fall through to markdown and delimited text parsing.
+    }
+  }
+
+  const lines = trimmed.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const tableHeaderIndex = lines.findIndex(line => line.includes('|') && !/^\|?\s*:?-{3,}/.test(line));
+  if (tableHeaderIndex >= 0) {
+    const headers = markdownTableCells(lines[tableHeaderIndex]);
+    const rows = lines.slice(tableHeaderIndex + 1)
+      .filter(line => line.includes('|'))
+      .map(markdownTableCells)
+      .filter(cells => cells.length && !cells.every(cell => /^:?-{3,}:?$/.test(cell)));
+    return rows.filter(row => row.some(Boolean)).map((row, index) => structuredLeadFromObject(
+      Object.fromEntries(headers.map((header, columnIndex) => [header || 'Column ' + (columnIndex + 1), row[columnIndex] || ''])),
+      index + 1,
+      sourceFileName,
+    ));
+  }
+
+  const delimiter = detectDelimiter(lines[0]);
+  const rows = lines.map(line => parseDelimitedLine(line, delimiter));
+  const headers = rows[0];
+  if (hasKnownHeader(headers)) {
+    return rows.slice(1).filter(row => row.some(Boolean)).map((row, index) => structuredLeadFromObject(
+      Object.fromEntries(headers.map((header, columnIndex) => [header || 'Column ' + (columnIndex + 1), row[columnIndex] || ''])),
+      index + 1,
+      sourceFileName,
+    ));
+  }
+  return rows.filter(row => row.some(Boolean)).map((row, index) => structuredLeadFromObject(
+    Object.fromEntries(row.map((field, columnIndex) => ['Column ' + (columnIndex + 1), field])),
+    index + 1,
+    sourceFileName,
+  ));
+}
+
 export async function extractLeadsFromFile(file: File) {
   const sourceFileName = file.name;
   if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
