@@ -146,11 +146,14 @@ export async function extractLeadsFromFile(file: File) {
       pages.push(content.items.map(item => ('str' in item ? item.str : '')).join(' '));
     }
     const extractedText = pages.join('\n');
-    return extractedText.trim()
-      ? parseLeadText(extractedText, sourceFileName)
+    const parsedRows = extractedText.trim() ? parseLeadText(extractedText, sourceFileName) : [];
+    return parsedRows.length
+      ? parsedRows
       : [emptyLead({
         business_name: sourceFileName,
-        source_notes: 'This PDF has no selectable text. The original file was stored and can be opened from this record.',
+        source_notes: extractedText.trim()
+          ? 'The original file was stored, but no lead rows could be extracted from its text.'
+          : 'This PDF has no selectable text. The original file was stored and can be opened from this record.',
       }, sourceFileName)];
   }
 
