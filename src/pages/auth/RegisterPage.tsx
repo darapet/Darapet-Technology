@@ -9,6 +9,21 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Loader2, Eye, EyeOff, User, Mail, Lock, Target } from 'lucide-react';
 import { motion } from 'framer-motion';
 
+
+async function getFunctionErrorMessage(error: unknown, data: { error?: unknown } | null | undefined, fallback: string) {
+  if (data?.error) return String(data.error);
+  const functionError = error as { message?: string; context?: Response } | null;
+  if (functionError?.context) {
+    try {
+      const body = await functionError.context.clone().json();
+      if (body?.error) return String(body.error);
+    } catch {
+      // Use the SDK message when the function did not return JSON.
+    }
+  }
+  return functionError?.message || fallback;
+}
+
 export function RegisterPage() {
   const [, setLocation] = useLocation();
   const { user, appUser, isAdmin, refreshProfile } = useAuth();
@@ -50,7 +65,7 @@ export function RegisterPage() {
       body: { action: 'verify', userId: registeredUserId, code: verificationCode },
     });
     if (verifyError || data?.error) {
-      setError(verifyError?.message || data?.error || 'That code is not valid.');
+      setError(await getFunctionErrorMessage(verifyError, data, 'That code is not valid.'));
       setLoading(false);
       return;
     }
@@ -67,7 +82,7 @@ export function RegisterPage() {
       body: { action: 'send', userId: registeredUserId, email: verificationEmail },
     });
     if (resendError || data?.error) {
-      setError(resendError?.message || data?.error || 'Unable to resend the code.');
+      setError(await getFunctionErrorMessage(resendError, data, 'Unable to resend the code.'));
     } else {
       setError('A new verification code was sent.');
     }
@@ -112,7 +127,7 @@ export function RegisterPage() {
       body: { action: 'send', userId, email },
     });
     if (otpError || otpData?.error) {
-      setError(otpError?.message || otpData?.error || 'Your account was created, but the verification code could not be sent.');
+      setError(await getFunctionErrorMessage(otpError, otpData, 'Your account was created, but the verification code could not be sent.'));
       setLoading(false);
       return;
     }
