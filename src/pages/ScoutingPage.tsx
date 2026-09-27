@@ -711,7 +711,7 @@ export function ScoutingPage() {
                       </button>
                       <div className="flex items-center gap-1 shrink-0">
                         <Button variant="outline" size="sm" onClick={() => researchLead(lead)} disabled={lead.opted_out} className="hidden sm:flex gap-1.5">
-                          {researching === lead.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Research
+                          <RefreshCw className="w-3.5 h-3.5" /> Research
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => setExpandedId(expanded ? null : lead.id)} aria-label="Toggle lead details">{expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronDown className="w-4 h-4 -rotate-90" />}</Button>
                       </div>
@@ -732,7 +732,7 @@ export function ScoutingPage() {
                             <div className="rounded-lg border bg-background p-3 space-y-2"><div className="flex items-center justify-between gap-2"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Imported fields</p><span className="text-xs text-muted-foreground">{Object.keys(lead.raw_data || {}).length} columns</span></div><div className="grid sm:grid-cols-2 gap-2 max-h-64 overflow-auto">{Object.entries(lead.raw_data || {}).map(([key, value]) => <div key={key} className="rounded-md bg-muted/50 p-2"><p className="text-[11px] font-medium text-muted-foreground break-words">{key}</p><p className="text-sm break-words">{value || '—'}</p></div>)}</div></div>
                             <div><Label className="text-xs">Your research notes</Label><Textarea value={lead.source_notes} onChange={event => updateLocalLead(lead.id, { source_notes: event.target.value })} onBlur={event => saveLead(lead.id, { source_notes: event.target.value })} placeholder="What did you notice about the product, website, or opportunity?" className="min-h-24" /></div>
                             <div className="flex flex-wrap gap-2">
-                              <Button size="sm" onClick={() => researchLead(lead)} disabled={researching === lead.id || lead.opted_out} className="gap-1.5"><Search className="w-3.5 h-3.5" /> Research this lead</Button>
+                              <Button size="sm" onClick={() => researchLead(lead)} disabled={lead.opted_out} className="gap-1.5"><Search className="w-3.5 h-3.5" /> Research this lead</Button>
                               {lead.website && <Button variant="outline" size="sm" onClick={() => window.open(lead.website, '_blank', 'noopener,noreferrer')} className="gap-1.5"><ExternalLink className="w-3.5 h-3.5" /> Open website</Button>}
                               {lead.source_file_path && <Button variant="outline" size="sm" onClick={() => openSourceFile(lead)} className="gap-1.5"><FileDown className="w-3.5 h-3.5" /> Open original file</Button>}
                               <Button variant={lead.opted_out ? 'secondary' : 'ghost'} size="sm" onClick={() => saveLead(lead.id, { opted_out: !lead.opted_out })} className="gap-1.5">{lead.opted_out ? <Check className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5" />} {lead.opted_out ? 'Opted out' : 'Mark opted out'}</Button>
