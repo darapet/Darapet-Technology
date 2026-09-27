@@ -1,17 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'wouter';
+import { Link, useLocation } from 'wouter';
 import {
   AlertCircle, Check, CheckCircle2, ChevronDown, ExternalLink, FileDown, FileText,
-  Globe2, Loader2, Mail, Megaphone, NotebookPen, RefreshCw, Search,
+  Globe2, Loader2, Mail, Megaphone, RefreshCw, Search,
   Send, ShieldCheck, Sparkles, Upload, UserRound, X,
-  type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { uploadFileToCloudinary } from '@/lib/cloudinary';
 import { hasUsableEmailProvider, sendEmail } from '@/lib/emailSend';
 import { disconnectGmail, getGmailStatus, sendGmail, startGmailConnection, type GmailStatus } from '@/lib/gmail';
-import { parseAiJson, extractLeadsFromFile, toHtmlEmail, type ScoutLead } from '@/lib/scouting';
+import { extractLeadEmails, parseAiJson, extractLeadsFromFile, toHtmlEmail, type ScoutLead } from '@/lib/scouting';
 import { EMAIL_TEMPLATES } from '@/pages/email/emailTemplates';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -22,11 +21,6 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-
-type ResearchResponse = {
-  summary: string;
-  pain_points: string[];
-};
 
 type PersonalizationResponse = {
   subject: string;
@@ -49,6 +43,9 @@ type WebsiteResearchResult = {
   demerits: string[];
   improvements: string[];
   contactHints: string[];
+  concentration?: string;
+  websiteName?: string;
+  ownerName?: string;
   analyzedAt?: string;
 };
 
@@ -58,14 +55,6 @@ type TemplateConfig = {
   brandColor: string;
   websiteUrl: string;
   socialLinks: { platform: string; url: string }[];
-};
-
-type Stat = {
-  label: string;
-  value: number;
-  icon: LucideIcon;
-  color: string;
-  bg: string;
 };
 
 type LeadImport = {
@@ -93,9 +82,15 @@ function statusLabel(status: ScoutLead['research_status']) {
   return 'Not researched';
 }
 
+function storedResearch(lead: ScoutLead): WebsiteResearchResult | null {
+  if (lead.research_data && typeof lead.research_data === 'object') return lead.research_data as WebsiteResearchResult;
+  return null;
+}
+
 export function ScoutingPage() {
   const { user, profile } = useAuth();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const fileInput = useRef<HTMLInputElement>(null);
   const [leads, setLeads] = useState<ScoutLead[]>([]);
   const [imports, setImports] = useState<LeadImport[]>([]);
@@ -104,8 +99,6 @@ export function ScoutingPage() {
   const [importName, setImportName] = useState('');
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
-  const [researching, setResearching] = useState<string | null>(null);
-  const [researchingBatch, setResearchingBatch] = useState(false);
   const [personalizing, setPersonalizing] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendProgress, setSendProgress] = useState(0);
@@ -117,11 +110,7 @@ export function ScoutingPage() {
   const [gmailLoading, setGmailLoading] = useState(true);
   const [gmailAction, setGmailAction] = useState(false);
   const [gmailError, setGmailError] = useState('');
-  const [researchPrompt, setResearchPrompt] = useState(
-    'Review the fetched evidence. Identify visible merits, demerits, concrete areas for improvement, and any public contact hints. Do not invent facts.'
-  );
   const [personalizationPrompt, setPersonalizationPrompt] = useState('');
-  const [researchResults, setResearchResults] = useState<Record<string, WebsiteResearchResult>>({});
   const [showPersonalizationPrompt, setShowPersonalizationPrompt] = useState(false);
   const [showTemplateChooser, setShowTemplateChooser] = useState(false);
   const [showTemplateCustomize, setShowTemplateCustomize] = useState(false);
@@ -317,128 +306,60 @@ export function ScoutingPage() {
     return parsed;
   };
 
-  const scrapeWebsite = async (url: string) => {
-    const { data, error } = await supabase.functions.invoke('research-website', { body: { url } });
-    if (error) throw new Error(error.message || 'The research scraper could not be reached.');
-    if (!data) throw new Error('The research scraper returned no result.');
-    return data as { success: boolean; status: number | null; statusText: string; finalUrl?: string; title?: string; description?: string; extractedText?: string; error?: string };
+  const researchLead = (lead: ScoutLead) => {
+    setLocation('/scouting/research?leadId=' + encodeURIComponent(lead.id) + '&rerun=1');
   };
 
-  const researchLead = async (lead: ScoutLead) => {
-    if (!lead.website) {
-      setExpandedId(lead.id);
-      toast({ variant: 'destructive', title: 'This lead has no website', description: 'Add a website before starting research.' });
-      return false;
-    }
-    setResearchResults(current => ({ ...current, [lead.id]: {
-      ...(current[lead.id] || { leadId: lead.id, website: lead.website, httpStatus: null, statusText: '', success: false, merits: [], demerits: [], improvements: [], contactHints: [] }),
-      leadId: lead.id, website: lead.website, status: 'running', error: undefined,
-    }}));
-    try {
-      const scraped = await scrapeWebsite(lead.website);
-      let analysis: Partial<WebsiteResearchResult> = {};
-      if (aiKey && (scraped.extractedText || scraped.description || lead.raw_data)) {
-        try {
-          const aiResult = await callGroq<{ merits: string[]; demerits: string[]; improvements: string[]; contact_hints: string[] }>(
-            `Analyze only this fetched website evidence. Do not invent facts.
-Website: ${lead.website}
-Imported fields: ${JSON.stringify(lead.raw_data || {})}
-Title: ${scraped.title || 'None'}
-Description: ${scraped.description || 'None'}
-Fetched text: ${(scraped.extractedText || '').slice(0, 6500)}
-Instruction: ${researchPrompt}
-Return JSON exactly as {"merits":[],"demerits":[],"improvements":[],"contact_hints":[]}.`
-          );
-          analysis = { merits: Array.isArray(aiResult.merits) ? aiResult.merits.slice(0, 5) : [], demerits: Array.isArray(aiResult.demerits) ? aiResult.demerits.slice(0, 5) : [], improvements: Array.isArray(aiResult.improvements) ? aiResult.improvements.slice(0, 5) : [], contactHints: Array.isArray(aiResult.contact_hints) ? aiResult.contact_hints.slice(0, 5) : [] };
-        } catch {
-          analysis = {};
-        }
-      }
-      const result: WebsiteResearchResult = {
-        leadId: lead.id,
-        website: lead.website,
-        status: 'complete',
-        httpStatus: scraped.status,
-        statusText: scraped.statusText || '',
-        success: scraped.success,
-        finalUrl: scraped.finalUrl,
-        title: scraped.title,
-        description: scraped.description,
-        extractedText: scraped.extractedText,
-        error: scraped.error,
-        merits: analysis.merits || (scraped.success ? ['Website responded successfully.'] : []),
-        demerits: analysis.demerits || (scraped.success ? [] : [scraped.error || ('Website returned HTTP ' + (scraped.status || 'error'))]),
-        improvements: analysis.improvements || [],
-        contactHints: analysis.contactHints || [],
-        analyzedAt: new Date().toISOString(),
-      };
-      setResearchResults(current => ({ ...current, [lead.id]: result }));
-      updateLocalLead(lead.id, { research_status: result.success ? 'researched' : 'needs_manual' });
-      return result.success;
-    } catch (error) {
-      const result: WebsiteResearchResult = {
-        leadId: lead.id, website: lead.website, status: 'failed', httpStatus: null, statusText: '', success: false,
-        error: error instanceof Error ? error.message : 'Research failed.', merits: [], demerits: ['The website could not be fetched.'], improvements: [], contactHints: [], analyzedAt: new Date().toISOString(),
-      };
-      setResearchResults(current => ({ ...current, [lead.id]: result }));
-      updateLocalLead(lead.id, { research_status: 'needs_manual' });
-      return false;
-    }
-  };
-
-  const researchImport = async () => {
+  const researchImport = () => {
     if (selectedImportId === 'all') {
       toast({ variant: 'destructive', title: 'Choose a lead list first', description: 'Select the uploaded list you want to research.' });
       return;
     }
-    const targets = activeLeads.filter(lead => Boolean(lead.website));
-    if (!targets.length) {
-      toast({ variant: 'destructive', title: 'No websites in this list', description: 'Add website values to the imported rows first.' });
-      return;
-    }
-    setResearchingBatch(true);
-    let succeeded = 0;
-    let failed = 0;
-    try {
-      for (const lead of targets) {
-        if (await researchLead(lead)) succeeded += 1; else failed += 1;
-      }
-      toast({ title: 'Research run finished', description: succeeded + ' succeeded, ' + failed + ' returned an error or could not be fetched.' });
-    } finally {
-      setResearchingBatch(false);
-    }
+    setLocation('/scouting/research?importId=' + encodeURIComponent(selectedImportId) + '&rerun=1');
   };
 
   const personalizeLead = async (lead: ScoutLead) => {
-    const research = researchResults[lead.id];
-    if (!research) return;
-    const result = await callGroq<PersonalizationResponse>(`Write one distinct, respectful outreach email for this contact.
-User personalization instruction: ${personalizationPrompt}
-Recipient: ${lead.owner_name || 'the contact'}
-Email: ${lead.email}
-Business: ${lead.business_name}
-App/product: ${lead.app_name || 'not provided'}
-Imported fields: ${JSON.stringify(lead.raw_data || {})}
-Website: ${lead.website || 'not provided'}
-HTTP result: ${research.httpStatus || 'unavailable'} ${research.statusText}
-Website title: ${research.title || 'None'}
-Website description: ${research.description || 'None'}
-Merits: ${research.merits.join('; ') || 'None recorded'}
-Demerits: ${research.demerits.join('; ') || 'None recorded'}
-Areas for improvement: ${research.improvements.join('; ') || 'None recorded'}
-Fetched evidence: ${(research.extractedText || '').slice(0, 6500)}
-Sender: ${profile?.company || profile?.name || 'a freelance technology partner'}
-Return JSON exactly as {"subject":"...","body":"..."}. The body must be plain text, under 180 words, specific to this contact, and end with an unsubscribe sentence.`);
-    const patch = { personalization_status: 'generated' as const, email_subject: result.subject || ('A quick idea for ' + lead.business_name), email_body: result.body || '' };
-    await saveLead(lead.id, patch);
+    const research = storedResearch(lead);
+    const recipientEmails = extractLeadEmails(lead);
+    if (!research || !recipientEmails.length) return;
+    const drafts = await Promise.all(recipientEmails.map(async recipientEmail => {
+      const result = await callGroq<PersonalizationResponse>(
+        'Write one distinct, respectful outreach email for this contact.\n' +
+        'User personalization instruction: ' + personalizationPrompt + '\n' +
+        'Recipient: ' + (lead.owner_name || 'the contact') + '\n' +
+        'Email: ' + recipientEmail + '\n' +
+        'Business: ' + lead.business_name + '\n' +
+        'App/product: ' + (lead.app_name || 'not provided') + '\n' +
+        'Imported fields: ' + JSON.stringify(lead.raw_data || {}) + '\n' +
+        'Website: ' + (lead.website || 'not provided') + '\n' +
+        'Website title: ' + (research.title || 'None') + '\n' +
+        'Website description: ' + (research.description || 'None') + '\n' +
+        'Merits: ' + research.merits.join('; ') + '\n' +
+        'Demerits: ' + research.demerits.join('; ') + '\n' +
+        'Area of concentration: ' + (research.concentration || 'None recorded') + '\n' +
+        'Areas for improvement: ' + research.improvements.join('; ') + '\n' +
+        'Public contact hints: ' + research.contactHints.join('; ') + '\n' +
+        'Fetched evidence: ' + (research.extractedText || '').slice(0, 6500) + '\n' +
+        'Sender: ' + (profile?.company || profile?.name || 'a freelance technology partner') + '\n' +
+        'Return JSON exactly as {"subject":"...","body":"..."}. The body must be plain text, under 180 words, specific to this contact, and end with an unsubscribe sentence.'
+      );
+      return { recipientEmail, subject: result.subject || ('A quick idea for ' + lead.business_name), body: result.body || '' };
+    }));
+    const first = drafts[0];
+    await saveLead(lead.id, {
+      email_drafts: drafts,
+      personalization_status: 'generated',
+      email_subject: first?.subject || '',
+      email_body: first?.body || '',
+    });
   };
 
   const openPersonalizePrompt = () => {
-    if (!activeLeads.some(lead => selectedIds.has(lead.id) && researchResults[lead.id] && !lead.opted_out && lead.email)) {
+    if (!activeLeads.some(lead => selectedIds.has(lead.id) && storedResearch(lead) && !lead.opted_out && extractLeadEmails(lead).length)) {
       toast({ variant: 'destructive', title: 'Research and select contacts first', description: 'Choose researched leads with email addresses before personalizing.' });
       return;
     }
-    setShowPersonalizationPrompt(true);
+    openTemplateChooser();
   };
 
   const loadTemplateConfig = () => {
@@ -486,7 +407,7 @@ Return JSON exactly as {"subject":"...","body":"..."}. The body must be plain te
   };
 
   const personalizeSelected = async () => {
-    const targets = activeLeads.filter(lead => selectedIds.has(lead.id) && !lead.opted_out && lead.email && researchResults[lead.id]);
+    const targets = activeLeads.filter(lead => selectedIds.has(lead.id) && !lead.opted_out && extractLeadEmails(lead).length && storedResearch(lead));
     if (!targets.length) {
       toast({ variant: 'destructive', title: 'No researched contacts selected', description: 'Research the list, select contacts, then personalize.' });
       return;
@@ -509,14 +430,20 @@ Return JSON exactly as {"subject":"...","body":"..."}. The body must be plain te
   };
 
   const sendSelected = async () => {
-    const targets = leads.filter(lead =>
-      selectedIds.has(lead.id) && lead.email && !lead.opted_out && lead.email_subject && lead.email_body && lead.send_status !== 'sent'
-    );
+    const targets = leads.flatMap(lead => {
+      if (!selectedIds.has(lead.id) || lead.opted_out) return [];
+      const drafts = lead.email_drafts?.length
+        ? lead.email_drafts
+        : lead.email && lead.email_subject && lead.email_body
+          ? [{ recipientEmail: lead.email, subject: lead.email_subject, body: lead.email_body }]
+          : [];
+      return drafts.filter(draft => draft.recipientEmail && draft.subject && draft.body).map(draft => ({ lead, draft }));
+    });
     if (!targets.length) {
       toast({ variant: 'destructive', title: 'No reviewed drafts selected', description: 'Generate and review drafts before sending.' });
       return;
     }
-    if (!window.confirm(`Send ${targets.length} reviewed message${targets.length === 1 ? '' : 's'} now? Opted-out leads are excluded.`)) return;
+    if (!window.confirm('Send ' + targets.length + ' reviewed message' + (targets.length === 1 ? '' : 's') + ' now? Opted-out leads are excluded.')) return;
 
     let provider: any = null;
     if (!gmailStatus.connected) {
@@ -536,22 +463,27 @@ Return JSON exactly as {"subject":"...","body":"..."}. The body must be plain te
       user_id: user!.id,
       subject: 'Scouting outreach',
       body: 'Individualized scouting messages',
-      recipients: targets.map(lead => lead.email),
+      recipients: targets.map(target => target.draft.recipientEmail),
       status: 'sending',
       created_at: new Date().toISOString(),
     }).select('id').single();
+    const leadResults: Record<string, { sent: number; total: number }> = {};
     let sent = 0;
-    for (const [index, lead] of targets.entries()) {
+    for (const [index, target] of targets.entries()) {
+      const lead = target.lead;
+      leadResults[lead.id] = leadResults[lead.id] || { sent: 0, total: 0 };
+      leadResults[lead.id].total += 1;
       updateLocalLead(lead.id, { send_status: 'sending' });
       let sendOk = false;
       let sendError = '';
       try {
+        const sendLead = { ...lead, email: target.draft.recipientEmail, email_subject: target.draft.subject, email_body: target.draft.body };
         if (gmailStatus.connected) {
           const result = await sendGmail({
             fromName: profile?.name || 'Darapet',
-            to: lead.email,
-            subject: lead.email_subject,
-            html: renderLeadEmail(lead),
+            to: target.draft.recipientEmail,
+            subject: target.draft.subject,
+            html: renderLeadEmail(sendLead),
           });
           sendOk = result.success;
         } else {
@@ -559,9 +491,9 @@ Return JSON exactly as {"subject":"...","body":"..."}. The body must be plain te
             config: provider,
             fromName: profile?.name || 'Darapet',
             fromEmail: profile?.email || user!.email!,
-            to: lead.email,
-            subject: lead.email_subject,
-            html: renderLeadEmail(lead),
+            to: target.draft.recipientEmail,
+            subject: target.draft.subject,
+            html: renderLeadEmail(sendLead),
           });
           sendOk = result.ok;
           sendError = result.error || '';
@@ -573,26 +505,29 @@ Return JSON exactly as {"subject":"...","body":"..."}. The body must be plain te
         user_id: user!.id,
         campaign_id: campaign?.id || null,
         lead_id: lead.id,
-        to_email: lead.email,
-        subject: lead.email_subject,
-        provider: gmailStatus.connected ? 'gmail' : provider.active_smtp === 'smtp' ? 'smtp' : 'brevo',
+        to_email: target.draft.recipientEmail,
+        subject: target.draft.subject,
+        provider: gmailStatus.connected ? 'gmail' : provider?.active_smtp === 'smtp' ? 'smtp' : 'brevo',
         status: sendOk ? 'sent' : 'failed',
         error_msg: sendError || null,
         sent_at: new Date().toISOString(),
       });
+      if (sendOk) {
+        sent += 1;
+        leadResults[lead.id].sent += 1;
+      }
       await db.from('scout_leads').update({
         send_status: sendOk ? 'sent' : 'failed',
         sent_at: sendOk ? new Date().toISOString() : null,
       }).eq('id', lead.id).eq('user_id', user!.id);
       updateLocalLead(lead.id, { send_status: sendOk ? 'sent' : 'failed', sent_at: sendOk ? new Date().toISOString() : null });
-      if (sendOk) sent += 1;
       setSendProgress(Math.round(((index + 1) / targets.length) * 100));
     }
     if (campaign?.id) {
       await db.from('campaigns').update({ status: sent === targets.length ? 'sent' : 'failed', sent_count: sent, sent_at: new Date().toISOString() }).eq('id', campaign.id);
     }
     setSending(false);
-    toast({ title: `${sent} of ${targets.length} messages sent`, description: sent === targets.length ? 'Your campaign history has been updated.' : 'Failed sends are marked for review.' });
+    toast({ title: sent + ' of ' + targets.length + ' messages sent', description: sent === targets.length ? 'Your campaign history has been updated.' : 'Failed sends are marked for review.' });
   };
 
   const activeLeads = useMemo(() => selectedImportId === 'all'
@@ -687,7 +622,7 @@ Return JSON exactly as {"subject":"...","body":"..."}. The body must be plain te
               <div><Label>Logo URL</Label><Input value={templateConfig.logoUrl} onChange={event => setTemplateConfig(current => ({ ...current, logoUrl: event.target.value }))} placeholder="https://.../logo.png" /></div>
               <div><Label>Website URL</Label><Input value={templateConfig.websiteUrl} onChange={event => setTemplateConfig(current => ({ ...current, websiteUrl: event.target.value }))} placeholder="https://yourwebsite.com" /></div>
               <div className="grid sm:grid-cols-3 gap-3"><div><Label>LinkedIn</Label><Input value={socialUrl('linkedin')} onChange={event => setSocialUrl('linkedin', event.target.value)} /></div><div><Label>Instagram</Label><Input value={socialUrl('instagram')} onChange={event => setSocialUrl('instagram', event.target.value)} /></div><div><Label>Twitter / X</Label><Input value={socialUrl('twitter')} onChange={event => setSocialUrl('twitter', event.target.value)} /></div></div>
-              <div className="flex justify-end gap-2 pt-2"><Button variant="outline" onClick={() => setShowTemplateCustomize(false)}>Back</Button><Button onClick={() => { setShowTemplateCustomize(false); toast({ title: 'Template ready', description: 'Review the drafts, then click Send reviewed.' }); }}>Continue</Button></div>
+              <div className="flex justify-end gap-2 pt-2"><Button variant="outline" onClick={() => setShowTemplateCustomize(false)}>Back</Button><Button onClick={() => { setShowTemplateCustomize(false); setShowPersonalizationPrompt(true); }}>Continue to AI prompt</Button></div>
             </CardContent>
           </Card>
         </div>
@@ -711,37 +646,17 @@ Return JSON exactly as {"subject":"...","body":"..."}. The body must be plain te
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {([
-          { label: 'Leads', value: stats.total, icon: FileText, color: 'text-blue-500', bg: 'bg-blue-500/10' },
-          { label: 'Researched', value: stats.researched, icon: Search, color: 'text-purple-500', bg: 'bg-purple-500/10' },
-          { label: 'Drafts ready', value: stats.drafts, icon: Sparkles, color: 'text-amber-500', bg: 'bg-amber-500/10' },
-          { label: 'Sent', value: stats.sent, icon: Send, color: 'text-green-500', bg: 'bg-green-500/10' },
-        ] as Stat[]).map(({ label, value, icon: Icon, color, bg }) => (
-          <Card key={label} className="shadow-sm">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div><p className="text-xs text-muted-foreground">{label}</p><p className="text-2xl font-bold mt-1">{value}</p></div>
-              <div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center`}><Icon className={`w-5 h-5 ${color}`} /></div>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="flex items-center justify-between gap-3">
+        <div><p className="text-sm font-semibold text-primary">Lead research</p><p className="text-sm text-muted-foreground mt-1">Every imported lead stays visible here. Research opens a separate page and visits each website one after another.</p></div>
+        <Search className="w-5 h-5 text-primary shrink-0" />
       </div>
-
-      <Card className="border-primary/20 bg-primary/[0.03]">
-        <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><NotebookPen className="w-4 h-4 text-primary" /> Research analysis instruction</CardTitle></CardHeader>
-        <CardContent className="space-y-2">
-          <Label htmlFor="research-prompt">Optional rules for analyzing fetched evidence</Label>
-          <Textarea id="research-prompt" value={researchPrompt} onChange={event => setResearchPrompt(event.target.value)} className="min-h-20 bg-background" />
-          <p className="text-xs text-muted-foreground">The scraper visits each website through Supabase, reports the HTTP result, and keeps the fetched evidence in this research session.</p>
-        </CardContent>
-      </Card>
 
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-            <div><CardTitle className="text-base">Imported records</CardTitle><p className="text-sm text-muted-foreground mt-1">Choose a named list, search its rows, open any lead, and research one website or the whole list.</p></div>
+            <div><CardTitle className="text-base">Imported leads</CardTitle><p className="text-sm text-muted-foreground mt-1">Choose a list, then research one lead or the complete list. Website values are read from every imported column.</p></div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" size="sm" onClick={researchImport} disabled={researchingBatch || personalizing || sending || selectedImportId === 'all'} className="gap-1.5">{researchingBatch ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />} Research this list</Button>
+              <Button variant="secondary" size="sm" onClick={researchImport} disabled={personalizing || sending || selectedImportId === 'all'} className="gap-1.5"><Search className="w-3.5 h-3.5" /> Research this list</Button>
               {activeLeads.some(lead => selectedIds.has(lead.id) && lead.email_subject) && <Button variant="outline" size="sm" onClick={openTemplateChooser} disabled={personalizing || sending} className="gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" /> Continue to template</Button>}
               <Button variant="outline" size="sm" onClick={openPersonalizePrompt} disabled={personalizing || sending} className="gap-1.5">{personalizing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />} Personalize selected</Button>
               <Button size="sm" onClick={sendSelected} disabled={sending || personalizing} className="gap-1.5">{sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Send reviewed</Button>
@@ -761,21 +676,6 @@ Return JSON exactly as {"subject":"...","body":"..."}. The body must be plain te
             </select>
           </div>
 
-          {selectedImportId !== 'all' && Object.values(researchResults).some(result => activeLeads.some(lead => lead.id === result.leadId)) && (
-            <div className="rounded-xl border border-primary/20 bg-primary/[0.02] p-4 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-semibold">Research results</p><p className="text-xs text-muted-foreground">Results stay in this session and are not written to the lead database.</p></div><Badge variant="outline">{activeLeads.filter(lead => researchResults[lead.id]).length} processed</Badge></div>
-              <div className="space-y-3">
-                {activeLeads.filter(lead => researchResults[lead.id]).map(lead => { const result = researchResults[lead.id]; return <div key={lead.id} className="rounded-lg border bg-background p-3 space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-semibold">{lead.business_name}</p><p className="text-xs text-muted-foreground break-all">{result.website}</p></div><div className="flex items-center gap-2">{result.status === 'running' ? <Badge variant="outline"><Loader2 className="w-3 h-3 mr-1 animate-spin" />Fetching</Badge> : result.success ? <Badge variant="outline" className="text-green-600 border-green-200"><CheckCircle2 className="w-3 h-3 mr-1" />{result.httpStatus} {result.statusText}</Badge> : <Badge variant="outline" className="text-red-600 border-red-200"><AlertCircle className="w-3 h-3 mr-1" />{result.httpStatus || 'Error'} {result.statusText}</Badge>}</div></div>
-                  {result.error && <p className="text-sm text-red-600">{result.error}</p>}
-                  {result.title && <p className="text-sm"><strong>{result.title}</strong>{result.description ? ' — ' + result.description : ''}</p>}
-                  {result.extractedText && <p className="text-xs text-muted-foreground max-h-20 overflow-hidden">{result.extractedText.slice(0, 600)}{result.extractedText.length > 600 ? '…' : ''}</p>}
-                  <div className="grid md:grid-cols-3 gap-3 text-sm"><div><p className="text-xs font-semibold uppercase text-muted-foreground">Merits</p>{result.merits.length ? <ul className="list-disc pl-4 mt-1 space-y-1">{result.merits.map(item => <li key={item}>{item}</li>)}</ul> : <p className="text-muted-foreground mt-1">None recorded</p>}</div><div><p className="text-xs font-semibold uppercase text-muted-foreground">Demerits</p>{result.demerits.length ? <ul className="list-disc pl-4 mt-1 space-y-1">{result.demerits.map(item => <li key={item}>{item}</li>)}</ul> : <p className="text-muted-foreground mt-1">None recorded</p>}</div><div><p className="text-xs font-semibold uppercase text-muted-foreground">Areas to improve</p>{result.improvements.length ? <ul className="list-disc pl-4 mt-1 space-y-1">{result.improvements.map(item => <li key={item}>{item}</li>)}</ul> : <p className="text-muted-foreground mt-1">None recorded</p>}</div></div>
-                </div>; })}
-              </div>
-            </div>
-          )}
-
           {leads.length === 0 ? (
             <div className="py-16 text-center border border-dashed rounded-xl">
               <Upload className="w-10 h-10 mx-auto text-muted-foreground/40 mb-3" />
@@ -789,7 +689,8 @@ Return JSON exactly as {"subject":"...","body":"..."}. The body must be plain te
               {filteredLeads.map(lead => {
                 const expanded = expandedId === lead.id;
                 const selected = selectedIds.has(lead.id);
-                const sessionResearch = researchResults[lead.id];
+                const sessionResearch = storedResearch(lead);
+                const drafts = lead.email_drafts?.length ? lead.email_drafts : (lead.email_subject && lead.email_body && lead.email ? [{ recipientEmail: lead.email, subject: lead.email_subject, body: lead.email_body }] : []);
                 return (
                   <div key={lead.id} className={`rounded-xl border transition-colors ${expanded ? 'border-primary/40 bg-primary/[0.02]' : 'border-border/70'}`}>
                     <div className="flex items-start gap-3 p-3 sm:p-4">
@@ -809,7 +710,7 @@ Return JSON exactly as {"subject":"...","body":"..."}. The body must be plain te
                         </div>
                       </button>
                       <div className="flex items-center gap-1 shrink-0">
-                        <Button variant="outline" size="sm" onClick={() => researchLead(lead)} disabled={researching === lead.id || lead.opted_out} className="hidden sm:flex gap-1.5">
+                        <Button variant="outline" size="sm" onClick={() => researchLead(lead)} disabled={lead.opted_out} className="hidden sm:flex gap-1.5">
                           {researching === lead.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Research
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => setExpandedId(expanded ? null : lead.id)} aria-label="Toggle lead details">{expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronDown className="w-4 h-4 -rotate-90" />}</Button>
@@ -831,7 +732,7 @@ Return JSON exactly as {"subject":"...","body":"..."}. The body must be plain te
                             <div className="rounded-lg border bg-background p-3 space-y-2"><div className="flex items-center justify-between gap-2"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Imported fields</p><span className="text-xs text-muted-foreground">{Object.keys(lead.raw_data || {}).length} columns</span></div><div className="grid sm:grid-cols-2 gap-2 max-h-64 overflow-auto">{Object.entries(lead.raw_data || {}).map(([key, value]) => <div key={key} className="rounded-md bg-muted/50 p-2"><p className="text-[11px] font-medium text-muted-foreground break-words">{key}</p><p className="text-sm break-words">{value || '—'}</p></div>)}</div></div>
                             <div><Label className="text-xs">Your research notes</Label><Textarea value={lead.source_notes} onChange={event => updateLocalLead(lead.id, { source_notes: event.target.value })} onBlur={event => saveLead(lead.id, { source_notes: event.target.value })} placeholder="What did you notice about the product, website, or opportunity?" className="min-h-24" /></div>
                             <div className="flex flex-wrap gap-2">
-                              <Button size="sm" onClick={() => researchLead(lead)} disabled={researching === lead.id || lead.opted_out} className="gap-1.5">{researching === lead.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />} Research this lead</Button>
+                              <Button size="sm" onClick={() => researchLead(lead)} disabled={researching === lead.id || lead.opted_out} className="gap-1.5"><Search className="w-3.5 h-3.5" /> Research this lead</Button>
                               {lead.website && <Button variant="outline" size="sm" onClick={() => window.open(lead.website, '_blank', 'noopener,noreferrer')} className="gap-1.5"><ExternalLink className="w-3.5 h-3.5" /> Open website</Button>}
                               {lead.source_file_path && <Button variant="outline" size="sm" onClick={() => openSourceFile(lead)} className="gap-1.5"><FileDown className="w-3.5 h-3.5" /> Open original file</Button>}
                               <Button variant={lead.opted_out ? 'secondary' : 'ghost'} size="sm" onClick={() => saveLead(lead.id, { opted_out: !lead.opted_out })} className="gap-1.5">{lead.opted_out ? <Check className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5" />} {lead.opted_out ? 'Opted out' : 'Mark opted out'}</Button>
@@ -845,8 +746,9 @@ Return JSON exactly as {"subject":"...","body":"..."}. The body must be plain te
                               {!sessionResearch && lead.pain_points.length > 0 && <ul className="list-disc pl-5 mt-2 text-sm text-muted-foreground space-y-1">{lead.pain_points.map(point => <li key={point}>{point}</li>)}</ul>}
                             </div>
                             <div className="rounded-lg border bg-background p-3 space-y-2">
-                              <div className="flex items-center justify-between gap-2"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Personalized draft</p>{lead.email_subject && <Badge variant="outline" className="text-green-600 border-green-200">Ready to review</Badge>}</div>
-                              {lead.email_subject ? <><Input value={lead.email_subject} onChange={event => updateLocalLead(lead.id, { email_subject: event.target.value })} onBlur={event => saveLead(lead.id, { email_subject: event.target.value })} /><Textarea value={lead.email_body} onChange={event => updateLocalLead(lead.id, { email_body: event.target.value })} onBlur={event => saveLead(lead.id, { email_body: event.target.value })} className="min-h-40" /><Button variant="outline" size="sm" onClick={() => personalizeLead(lead)} disabled={personalizing || lead.opted_out} className="gap-1.5"><Sparkles className="w-3.5 h-3.5" /> Regenerate</Button></> : <div className="text-sm text-muted-foreground py-4">Select this lead after research, then click <strong>Personalize selected</strong>.</div>}
+                              <div className="flex items-center justify-between gap-2"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Personalized drafts</p>{drafts.length > 0 && <Badge variant="outline" className="text-green-600 border-green-200">{drafts.length} recipient{drafts.length === 1 ? '' : 's'}</Badge>}</div>
+                              {drafts.length ? drafts.map(draft => <div key={draft.recipientEmail} className="rounded-md border p-2 space-y-2"><p className="text-xs font-medium text-muted-foreground">{draft.recipientEmail}</p><Input value={draft.subject} onChange={event => { const next = drafts.map(item => item.recipientEmail === draft.recipientEmail ? { ...item, subject: event.target.value } : item); updateLocalLead(lead.id, { email_drafts: next, email_subject: next[0]?.subject || '' }); }} onBlur={() => saveLead(lead.id, { email_drafts: drafts })} /><Textarea value={draft.body} onChange={event => { const next = drafts.map(item => item.recipientEmail === draft.recipientEmail ? { ...item, body: event.target.value } : item); updateLocalLead(lead.id, { email_drafts: next, email_body: next[0]?.body || '' }); }} onBlur={() => saveLead(lead.id, { email_drafts: drafts })} className="min-h-32" /></div>) : <div className="text-sm text-muted-foreground py-4">Select this lead after research, then click <strong>Personalize selected</strong>.</div>}
+                              {drafts.length > 0 && <Button variant="outline" size="sm" onClick={() => personalizeLead(lead)} disabled={personalizing || lead.opted_out} className="gap-1.5"><Sparkles className="w-3.5 h-3.5" /> Regenerate</Button>}
                             </div>
                           </div>
                         </div>
