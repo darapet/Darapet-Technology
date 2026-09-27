@@ -8,7 +8,7 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { hasUsableEmailProvider, sendEmail } from '@/lib/emailSend';
 import { disconnectGmail, getGmailStatus, sendGmail, startGmailConnection, type GmailStatus } from '@/lib/gmail';
-import { extractLeadEmails, parseAiJson, parsePastedLeads, toHtmlEmail, type ResearchSnapshot, type ScoutLead } from '@/lib/scouting';
+import { extractLeadEmails, extractLeadsFromFile, parseAiJson, parsePastedLeads, toHtmlEmail, type ResearchSnapshot, type ScoutLead } from '@/lib/scouting';
 import { EMAIL_TEMPLATES } from '@/pages/email/emailTemplates';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -56,6 +56,10 @@ export function ScoutingPage() {
   const [pasteText, setPasteText] = useState('');
   const [preview, setPreview] = useState<ScoutLead[]>([]);
   const [savingPaste, setSavingPaste] = useState(false);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfPreview, setPdfPreview] = useState<ScoutLead[]>([]);
+  const [readingPdf, setReadingPdf] = useState(false);
+  const [savingPdf, setSavingPdf] = useState(false);
   const [personalizing, setPersonalizing] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendProgress, setSendProgress] = useState(0);
@@ -113,6 +117,56 @@ export function ScoutingPage() {
     } catch (error) {
       setPreview([]);
       toast({ variant: 'destructive', title: 'Could not read pasted contacts', description: error instanceof Error ? error.message : 'Use the example format shown below.' });
+    }
+  };
+
+  const readPdf = async (file?: File) => {
+    if (!file) return;
+    if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) {
+      toast({ variant: 'destructive', title: 'Please choose a PDF', description: 'The scouting PDF reader accepts .pdf files only.' });
+      return;
+    }
+    setReadingPdf(true);
+    setPdfFile(file);
+    setPdfPreview([]);
+    try {
+      const parsed = await extractLeadsFromFile(file);
+      const usable = parsed.filter(lead => Object.keys(lead.raw_data || {}).length > 0 && lead.business_name !== file.name);
+      if (!usable.length) throw new Error('No separate contact rows were found. Make sure the PDF contains selectable text and a table with business, website, email, or contact columns.');
+      setPdfPreview(usable);
+      toast({ title: usable.length + ' PDF contacts recognized', description: 'Each row is ready to save and personalize separately.' });
+    } catch (error) {
+      setPdfFile(null);
+      setPdfPreview([]);
+      toast({ variant: 'destructive', title: 'Could not read this PDF', description: error instanceof Error ? error.message : 'Try a PDF with selectable text.' });
+    } finally {
+      setReadingPdf(false);
+    }
+  };
+
+  const savePdfLeads = async () => {
+    if (!pdfFile || !pdfPreview.length) return;
+    setSavingPdf(true);
+    try {
+      const rows = pdfPreview.map(lead => ({
+        ...lead,
+        user_id: user!.id,
+        source_file_name: pdfFile.name,
+        source_file_type: 'application/pdf',
+        source_file_size: pdfFile.size,
+      }));
+      const { data, error } = await db.from('scout_leads').insert(rows).select('*');
+      if (error) throw new Error(error.message);
+      const saved = (data || []) as ScoutLead[];
+      setLeads(current => [...saved, ...current]);
+      setSelectedIds(new Set(saved.map(lead => lead.id)));
+      setPdfFile(null);
+      setPdfPreview([]);
+      toast({ title: saved.length + ' PDF contacts saved', description: 'Select Personalize selected to generate individual drafts.' });
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Could not save PDF contacts', description: error instanceof Error ? error.message : 'Try reading the PDF again.' });
+    } finally {
+      setSavingPdf(false);
     }
   };
 
@@ -339,10 +393,20 @@ export function ScoutingPage() {
         <div>
           <div className="flex items-center gap-2 text-primary text-sm font-semibold mb-2"><Megaphone className="w-4 h-4" /> Scouting workspace</div>
           <h1 className="text-3xl font-bold tracking-tight">Paste leads, personalize, send</h1>
-          <p className="text-muted-foreground mt-2 max-w-2xl">Give ChatGPT the research task first. Paste its finished contact data here, then each row is personalized separately from its own website, owner, merits, and demerits.</p>
+          <p className="text-muted-foreground mt-2 max-w-2xl">Upload the PDF that already contains your lead research, or paste the same data from ChatGPT. The app keeps each contact separate, then personalizes from that contact's own website, owner, merits, and demerits.</p>
         </div>
         <Link href="/campaigns/history"><Button variant="outline" className="gap-2"><Mail className="w-4 h-4" /> Campaign history</Button></Link>
       </div>
+
+      <Card className="border-primary/20 bg-primary/[0.03]">
+        <CardHeader><CardTitle>Upload your lead PDF</CardTitle><p className="text-sm text-muted-foreground">The PDF reader extracts the rows in your contact table. Each business stays separate, including its website, owner, emails, merits, demerits, and other fields.</p></CardHeader>
+        <CardContent className="space-y-4">
+          <Input type="file" accept="application/pdf,.pdf" onChange={event => void readPdf(event.target.files?.[0])} disabled={readingPdf || savingPdf} className="cursor-pointer" />
+          <p className="text-xs text-muted-foreground">Use a PDF with selectable text. A scanned image-only PDF needs OCR before the rows can be separated reliably.</p>
+          {readingPdf && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Reading each PDF row…</div>}
+          {pdfPreview.length > 0 && <div className="rounded-lg border bg-background p-3 space-y-3"><div className="flex items-center justify-between"><p className="font-semibold">PDF preview: {pdfPreview.length} contacts</p><Badge variant="outline">Ready to save</Badge></div><div className="max-h-56 overflow-auto space-y-1">{pdfPreview.slice(0, 8).map((lead, index) => <div key={lead.id} className="flex items-center gap-2 text-sm"><span className="text-muted-foreground w-5">{index + 1}.</span><span className="font-medium truncate">{lead.business_name}</span><span className="text-muted-foreground truncate">{extractLeadEmails(lead).join(', ') || 'No email'}</span><span className="text-muted-foreground truncate">{lead.website || 'No website'}</span></div>)}{pdfPreview.length > 8 && <p className="text-xs text-muted-foreground">+ {pdfPreview.length - 8} more contacts</p>}</div><Button onClick={savePdfLeads} disabled={savingPdf || readingPdf}>{savingPdf ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />} Save PDF contacts</Button></div>}
+        </CardContent>
+      </Card>
 
       <Card className="border-primary/20 bg-primary/[0.03]">
         <CardHeader><CardTitle>Paste contacts from ChatGPT</CardTitle><p className="text-sm text-muted-foreground">Paste 1 contact or 50+. JSON arrays and Markdown tables work best. Every row becomes a separate contact.</p></CardHeader>
@@ -377,7 +441,7 @@ export function ScoutingPage() {
           })}</div>}
         </CardContent>
       </Card>
-      <div className="flex items-start gap-2 text-xs text-muted-foreground max-w-3xl"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /><p>Nothing is scraped or researched here. The website, contact details, merits, and demerits come from the data you paste from ChatGPT. The app only personalizes and sends after you review the drafts.</p></div>
+      <div className="flex items-start gap-2 text-xs text-muted-foreground max-w-3xl"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /><p>The app does not fetch or mix website data. It reads the rows from your uploaded PDF or pasted data, keeps each contact separate, and only sends after you review the individual drafts.</p></div>
     </div>
   );
 }
