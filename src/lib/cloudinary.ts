@@ -54,13 +54,18 @@ async function getCloudinaryConfig(): Promise<{ cloud: string; preset: string }>
   return { cloud, preset };
 }
 
-async function uploadToCloudinaryResponse(file: File, folder: string) {
+async function uploadToCloudinaryResponse(file: File, folder: string, resourceType = 'auto') {
   const { cloud, preset } = await getCloudinaryConfig();
   const form = new FormData();
   form.append('file', file);
   form.append('upload_preset', preset);
   form.append('folder', folder);
-  const response = await fetch('https://api.cloudinary.com/v1_1/' + cloud + '/auto/upload', { method: 'POST', body: form });
+  let response: Response;
+  try {
+    response = await fetch('https://api.cloudinary.com/v1_1/' + cloud + '/' + resourceType + '/upload', { method: 'POST', body: form });
+  } catch {
+    throw new Error('Could not reach Cloudinary. Check the Cloud Name and try again.');
+  }
   if (!response.ok) {
     let reason = response.statusText;
     try { const errorBody = await response.json(); reason = errorBody?.error?.message ?? reason; } catch { /* keep status text */ }
@@ -84,8 +89,10 @@ export interface CloudinaryFileUploadResult { bytes: number; format: string | nu
 
 // Scouting imports can be CSV, JSON, text, spreadsheets, PDFs, or media.
 export async function uploadFileToCloudinary(file: File, folder: string): Promise<CloudinaryFileUploadResult> {
-  const data = await uploadToCloudinaryResponse(file, folder);
-  return { bytes: Number(data.bytes ?? file.size), format: data.format ?? null, originalFilename: data.original_filename ?? file.name, publicId: data.public_id, resourceType: data.resource_type ?? 'raw', secureUrl: data.secure_url };
+  const resourceType = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'raw';
+  const data = await uploadToCloudinaryResponse(file, folder, resourceType);
+  if (!data.secure_url) throw new Error('Cloudinary accepted the upload but did not return a file URL.');
+  return { bytes: Number(data.bytes ?? file.size), format: data.format ?? null, originalFilename: data.original_filename ?? file.name, publicId: data.public_id, resourceType: data.resource_type ?? resourceType, secureUrl: data.secure_url };
 }
 export async function uploadImageToCloudinary(file: File, folder: string): Promise<string> {
   return (await uploadToCloudinary(file, folder)).secureUrl;
