@@ -40,6 +40,18 @@ type Stat = {
   bg: string;
 };
 
+type LeadImport = {
+  id: string;
+  name: string;
+  original_file_name: string;
+  source_file_path?: string | null;
+  source_file_type?: string | null;
+  source_file_size?: number | null;
+  columns: string[];
+  row_count: number;
+  created_at?: string;
+};
+
 const db = supabase as any;
 
 function displayWebsite(url: string) {
@@ -58,9 +70,14 @@ export function ScoutingPage() {
   const { toast } = useToast();
   const fileInput = useRef<HTMLInputElement>(null);
   const [leads, setLeads] = useState<ScoutLead[]>([]);
+  const [imports, setImports] = useState<LeadImport[]>([]);
+  const [selectedImportId, setSelectedImportId] = useState('all');
+  const [showImportName, setShowImportName] = useState(false);
+  const [importName, setImportName] = useState('');
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [researching, setResearching] = useState<string | null>(null);
+  const [researchingBatch, setResearchingBatch] = useState(false);
   const [personalizing, setPersonalizing] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendProgress, setSendProgress] = useState(0);
@@ -80,16 +97,20 @@ export function ScoutingPage() {
   useEffect(() => {
     if (!user) return;
     const load = async () => {
-      const [{ data }, { data: settings }] = await Promise.all([
-        db.from('scout_leads').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(500),
+      const [{ data: leadData, error: leadError }, { data: importData, error: importError }, { data: settings }] = await Promise.all([
+        db.from('scout_leads').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+        db.from('scout_imports').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
         db.from('settings').select('groq_api_key').eq('id', 1).maybeSingle(),
       ]);
-      setLeads((data || []) as ScoutLead[]);
+      if (leadError) toast({ variant: 'destructive', title: 'Could not load leads', description: leadError.message });
+      if (importError) toast({ variant: 'destructive', title: 'Could not load import lists', description: importError.message });
+      setLeads((leadData || []) as ScoutLead[]);
+      setImports((importData || []) as LeadImport[]);
       setGroqKey(settings?.groq_api_key || '');
       setLoading(false);
     };
     load();
-  }, [user]);
+  }, [toast, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -144,22 +165,54 @@ export function ScoutingPage() {
     }
   };
 
-  const importFile = async (file: File) => {
+  const beginImport = () => {
+    setImportName('');
+    setShowImportName(true);
+  };
+
+  const continueToFileUpload = () => {
+    const name = importName.trim();
+    if (!name) {
+      toast({ variant: 'destructive', title: 'Name this lead list first', description: 'Use a name such as SaaS founders September.' });
+      return;
+    }
+    setImportName(name);
+    setShowImportName(false);
+    window.setTimeout(() => fileInput.current?.click(), 0);
+  };
+
+  const importFile = async (file: File, listName: string) => {
     setImporting(true);
     let sourceFileUrl = '';
+    let importRecord: LeadImport | null = null;
     try {
       const uploaded = await uploadFileToCloudinary(file, 'darapet/' + user!.id + '/scouting-imports');
       sourceFileUrl = uploaded.secureUrl;
 
-      let imported;
+      let imported: ScoutLead[];
       try {
         imported = await extractLeadsFromFile(file);
       } catch (error) {
         const reason = error instanceof Error ? error.message : 'The file could not be read in the browser.';
         throw new Error('The original file was uploaded to Cloudinary, but it could not be read: ' + reason);
       }
+      const columns = Array.from(new Set(imported.flatMap(lead => lead.source_headers || Object.keys(lead.raw_data || {}))));
+      const { data: createdImport, error: importError } = await db.from('scout_imports').insert({
+        user_id: user!.id,
+        name: listName,
+        original_file_name: file.name,
+        source_file_path: sourceFileUrl,
+        source_file_type: file.type || 'application/octet-stream',
+        source_file_size: file.size,
+        columns,
+        row_count: imported.length,
+      }).select('*').single();
+      if (importError) throw new Error('The file was read, but its lead list could not be created: ' + importError.message);
+      importRecord = createdImport as LeadImport;
+
       const rows = imported.map(({ id: _id, ...lead }) => ({
         ...lead,
+        import_id: importRecord!.id,
         user_id: user!.id,
         source_file_path: sourceFileUrl,
         source_file_type: file.type || 'application/octet-stream',
@@ -167,13 +220,16 @@ export function ScoutingPage() {
       }));
       const { data, error } = await db.from('scout_leads').insert(rows).select('*');
       if (error) throw new Error('The original file uploaded to Cloudinary, but the lead records could not be saved: ' + error.message);
+      setImports(current => [importRecord!, ...current.filter(item => item.id !== importRecord!.id)]);
       setLeads(current => [...((data || []) as ScoutLead[]), ...current]);
+      setSelectedImportId(importRecord.id);
       setSelectedIds(new Set((data || []).map((lead: ScoutLead) => lead.id)));
-      toast({ title: `${data?.length || imported.length} records saved`, description: 'Every imported record is kept, including records without email addresses.' });
+      toast({ title: (data?.length || imported.length) + ' records saved', description: 'Lead list “' + listName + '” is ready. Every imported column is preserved.' });
     } catch (error) {
       toast({ variant: 'destructive', title: 'Import failed', description: error instanceof Error ? error.message : 'The file could not be imported. Try again with a CSV, JSON, PDF, or another supported file.' });
     } finally {
       setImporting(false);
+      setImportName('');
       if (fileInput.current) fileInput.current.value = '';
     }
   };
@@ -226,12 +282,12 @@ export function ScoutingPage() {
     return parsed;
   };
 
-  const researchLead = async (lead: ScoutLead) => {
+  const researchLead = async (lead: ScoutLead, quiet = false) => {
     if (!lead.website) {
       setExpandedId(lead.id);
       await saveLead(lead.id, { research_status: 'needs_manual' });
-      toast({ variant: 'destructive', title: 'Add a website first', description: 'This lead has no website to research.' });
-      return;
+      if (!quiet) toast({ variant: 'destructive', title: 'Add a website first', description: 'This lead has no website to research.' });
+      return false;
     }
     setResearching(lead.id);
     updateLocalLead(lead.id, { research_status: 'researching' });
@@ -245,17 +301,19 @@ export function ScoutingPage() {
         pageText = (doc.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 7000);
       }
     } catch {
-      // Most sites block browser cross-origin reads. The manual notes fallback is intentional.
+      // Most sites block browser cross-origin reads. The imported row remains available as evidence.
     }
 
     if (!pageText && !lead.source_notes) {
       updateLocalLead(lead.id, { research_status: 'needs_manual' });
       await db.from('scout_leads').update({ research_status: 'needs_manual' }).eq('id', lead.id).eq('user_id', user!.id);
-      window.open(lead.website, '_blank', 'noopener,noreferrer');
-      setExpandedId(lead.id);
-      toast({ title: 'Website opened for notes', description: 'This site blocks browser reading. Add your observations below, then research again.' });
+      if (!quiet) {
+        window.open(lead.website, '_blank', 'noopener,noreferrer');
+        setExpandedId(lead.id);
+        toast({ title: 'Website opened for notes', description: 'This site blocks browser reading. Add your observations below, then research again.' });
+      }
       setResearching(null);
-      return;
+      return false;
     }
 
     try {
@@ -263,8 +321,9 @@ export function ScoutingPage() {
 Business: ${lead.business_name}
 App: ${lead.app_name || 'Not provided'}
 Website: ${lead.website}
+Imported fields: ${JSON.stringify(lead.raw_data || {})}
 Imported notes: ${lead.source_notes || 'None'}
-Website text: ${pageText || 'The website could not be read in-browser; use imported notes only.'}
+Website text: ${pageText || 'The website could not be read in-browser; use imported fields and notes only.'}
 Instruction: ${researchPrompt}
 Return JSON with exactly: {"summary":"...", "pain_points":["...", "..."]}.`);
       const patch = {
@@ -273,12 +332,36 @@ Return JSON with exactly: {"summary":"...", "pain_points":["...", "..."]}.`);
         pain_points: Array.isArray(result.pain_points) ? result.pain_points.slice(0, 4) : [],
       };
       await saveLead(lead.id, patch);
-      toast({ title: 'Research complete', description: `${lead.business_name} is ready for personalization.` });
+      if (!quiet) toast({ title: 'Research complete', description: lead.business_name + ' is ready for personalization.' });
+      return true;
     } catch (error) {
       await saveLead(lead.id, { research_status: 'needs_manual' });
-      toast({ variant: 'destructive', title: 'Research needs attention', description: error instanceof Error ? error.message : 'Add notes and try again.' });
+      if (!quiet) toast({ variant: 'destructive', title: 'Research needs attention', description: error instanceof Error ? error.message : 'Add notes and try again.' });
+      return false;
     } finally {
       setResearching(null);
+    }
+  };
+
+  const researchImport = async () => {
+    if (selectedImportId === 'all') {
+      toast({ variant: 'destructive', title: 'Choose a lead list first', description: 'Select the imported list you want to research.' });
+      return;
+    }
+    const targets = activeLeads.filter(lead => Boolean(lead.website));
+    if (!targets.length) {
+      toast({ variant: 'destructive', title: 'No websites in this list', description: 'The imported rows need a website before research can begin.' });
+      return;
+    }
+    setResearchingBatch(true);
+    let completed = 0;
+    try {
+      for (const lead of targets) {
+        if (await researchLead(lead, true)) completed += 1;
+      }
+      toast({ title: 'List research finished', description: completed + ' of ' + targets.length + ' websites produced research briefs.' });
+    } finally {
+      setResearchingBatch(false);
     }
   };
 
@@ -290,6 +373,7 @@ Business: ${lead.business_name}
 App: ${lead.app_name || 'their product'}
 Website: ${lead.website || 'not provided'}
 Research: ${lead.research_summary || lead.source_notes}
+Imported fields: ${JSON.stringify(lead.raw_data || {})}
 Pain points: ${lead.pain_points.join('; ') || 'not established'}
 Sender context: ${profile?.company || profile?.name || 'a freelance technology partner'}
 Offer/context to personalize: ${researchPrompt}
@@ -412,21 +496,25 @@ If you would rather not receive messages from me, reply "unsubscribe" and I will
     toast({ title: `${sent} of ${targets.length} messages sent`, description: sent === targets.length ? 'Your campaign history has been updated.' : 'Failed sends are marked for review.' });
   };
 
-  const filteredLeads = useMemo(() => leads.filter(lead => {
+  const activeLeads = useMemo(() => selectedImportId === 'all'
+    ? leads
+    : leads.filter(lead => lead.import_id === selectedImportId), [leads, selectedImportId]);
+
+  const filteredLeads = useMemo(() => activeLeads.filter(lead => {
     const query = filter.toLowerCase();
-    const matchesText = !query || [lead.business_name, lead.app_name, lead.owner_name, lead.email, lead.website].some(value => value.toLowerCase().includes(query));
+    const matchesText = !query || [lead.business_name, lead.app_name, lead.owner_name, lead.email, lead.website, ...Object.values(lead.raw_data || {})].some(value => value.toLowerCase().includes(query));
     const matchesStatus = statusFilter === 'all'
       || (statusFilter === 'needs_review' && (lead.research_status !== 'researched' || !lead.email_subject))
       || (statusFilter === 'ready' && lead.research_status === 'researched' && Boolean(lead.email_subject) && !lead.opted_out)
       || (statusFilter === 'opted_out' && lead.opted_out);
     return matchesText && matchesStatus;
-  }), [filter, leads, statusFilter]);
+  }), [activeLeads, filter, statusFilter]);
 
   const stats = {
-    total: leads.length,
-    researched: leads.filter(lead => lead.research_status === 'researched').length,
-    drafts: leads.filter(lead => lead.personalization_status === 'generated').length,
-    sent: leads.filter(lead => lead.send_status === 'sent').length,
+    total: activeLeads.length,
+    researched: activeLeads.filter(lead => lead.research_status === 'researched').length,
+    drafts: activeLeads.filter(lead => lead.personalization_status === 'generated').length,
+    sent: activeLeads.filter(lead => lead.send_status === 'sent').length,
   };
 
   const toggleSelected = (id: string) => {
@@ -448,13 +536,25 @@ If you would rather not receive messages from me, reply "unsubscribe" and I will
           <p className="text-muted-foreground mt-2 max-w-2xl">Import any file, keep every record, and optionally research the website or prepare an outreach message when contact details are available.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <input ref={fileInput} type="file" accept="*/*" className="hidden" onChange={event => event.target.files?.[0] && importFile(event.target.files[0])} />
-          <Button onClick={() => fileInput.current?.click()} disabled={importing} className="gap-2">
-            {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Import any file
+          <input ref={fileInput} type="file" accept="*/*" className="hidden" onChange={event => event.target.files?.[0] && importFile(event.target.files[0], importName)} />
+          <Button onClick={beginImport} disabled={importing} className="gap-2">
+            {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Import a lead list
           </Button>
           <Link href="/campaigns/history"><Button variant="outline" className="gap-2"><Mail className="w-4 h-4" /> Campaign history</Button></Link>
         </div>
       </div>
+
+      {showImportName && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-labelledby="import-list-title">
+          <Card className="w-full max-w-md shadow-xl">
+            <CardHeader><CardTitle id="import-list-title">Name this lead list</CardTitle><p className="text-sm text-muted-foreground">Give this upload a name so you can research it separately from future imports.</p></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2"><Label htmlFor="import-list-name">Lead list name</Label><Input id="import-list-name" autoFocus value={importName} onChange={event => setImportName(event.target.value)} onKeyDown={event => event.key === 'Enter' && continueToFileUpload()} placeholder="e.g. SaaS founders — September" /></div>
+              <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setShowImportName(false)}>Cancel</Button><Button onClick={continueToFileUpload}>Continue to file upload</Button></div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <Card className={gmailStatus.connected ? 'border-green-200 bg-green-500/[0.03]' : 'border-primary/20 bg-primary/[0.03]'}>
         <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -502,8 +602,9 @@ If you would rather not receive messages from me, reply "unsubscribe" and I will
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-            <div><CardTitle className="text-base">Imported records</CardTitle><p className="text-sm text-muted-foreground mt-1">Every row is saved. Records with email addresses can still be researched and contacted.</p></div>
+            <div><CardTitle className="text-base">Imported records</CardTitle><p className="text-sm text-muted-foreground mt-1">Choose a named list, search its rows, open any lead, and research one website or the whole list.</p></div>
             <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" size="sm" onClick={researchImport} disabled={researchingBatch || personalizing || sending || selectedImportId === 'all'} className="gap-1.5">{researchingBatch ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />} Research this list</Button>
               <Button variant="outline" size="sm" onClick={personalizeSelected} disabled={personalizing || sending} className="gap-1.5">{personalizing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />} Personalize selected</Button>
               <Button size="sm" onClick={sendSelected} disabled={sending || personalizing} className="gap-1.5">{sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Send reviewed</Button>
             </div>
@@ -515,6 +616,10 @@ If you would rather not receive messages from me, reply "unsubscribe" and I will
             <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input value={filter} onChange={event => setFilter(event.target.value)} placeholder="Search business, owner, email, or website" className="pl-9" /></div>
             <select value={statusFilter} onChange={event => setStatusFilter(event.target.value as typeof statusFilter)} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
               <option value="all">All leads</option><option value="needs_review">Needs review</option><option value="ready">Ready to send</option><option value="opted_out">Opted out</option>
+            </select>
+            <select value={selectedImportId} onChange={event => { setSelectedImportId(event.target.value); setSelectedIds(new Set()); }} className="h-10 rounded-md border border-input bg-background px-3 text-sm min-w-48">
+              <option value="all">All lead lists</option>
+              {imports.map(item => <option key={item.id} value={item.id}>{item.name} ({item.row_count})</option>)}
             </select>
           </div>
 
@@ -565,9 +670,11 @@ If you would rather not receive messages from me, reply "unsubscribe" and I will
                               <div><Label className="text-xs">Owner / contact</Label><Input value={lead.owner_name} onChange={event => updateLocalLead(lead.id, { owner_name: event.target.value })} onBlur={event => saveLead(lead.id, { owner_name: event.target.value })} /></div>
                             </div>
                             <div className="grid sm:grid-cols-2 gap-3">
+                              <div><Label className="text-xs">App / product</Label><Input value={lead.app_name} onChange={event => updateLocalLead(lead.id, { app_name: event.target.value })} onBlur={event => saveLead(lead.id, { app_name: event.target.value })} /></div>
                               <div><Label className="text-xs">Email</Label><Input value={lead.email} onChange={event => updateLocalLead(lead.id, { email: event.target.value })} onBlur={event => saveLead(lead.id, { email: event.target.value })} /></div>
                               <div><Label className="text-xs">Website</Label><Input value={lead.website} onChange={event => updateLocalLead(lead.id, { website: event.target.value })} onBlur={event => saveLead(lead.id, { website: event.target.value })} /></div>
                             </div>
+                            <div className="rounded-lg border bg-background p-3 space-y-2"><div className="flex items-center justify-between gap-2"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Imported fields</p><span className="text-xs text-muted-foreground">{Object.keys(lead.raw_data || {}).length} columns</span></div><div className="grid sm:grid-cols-2 gap-2 max-h-64 overflow-auto">{Object.entries(lead.raw_data || {}).map(([key, value]) => <div key={key} className="rounded-md bg-muted/50 p-2"><p className="text-[11px] font-medium text-muted-foreground break-words">{key}</p><p className="text-sm break-words">{value || '—'}</p></div>)}</div></div>
                             <div><Label className="text-xs">Your research notes</Label><Textarea value={lead.source_notes} onChange={event => updateLocalLead(lead.id, { source_notes: event.target.value })} onBlur={event => saveLead(lead.id, { source_notes: event.target.value })} placeholder="What did you notice about the product, website, or opportunity?" className="min-h-24" /></div>
                             <div className="flex flex-wrap gap-2">
                               <Button size="sm" onClick={() => researchLead(lead)} disabled={researching === lead.id || lead.opted_out} className="gap-1.5">{researching === lead.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />} Research this lead</Button>
