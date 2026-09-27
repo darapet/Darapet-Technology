@@ -262,14 +262,67 @@ export async function extractLeadsFromFile(file: File) {
       data: new Uint8Array(await file.arrayBuffer()),
     });
     const pdf = await loadingTask.promise;
+    type PdfTextItem = { str: string; x: number; y: number };
     const pages: string[] = [];
+    const tableRows: string[] = [];
+    let columnStarts: number[] = [];
+    let headerStored = false;
+
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
       const page = await pdf.getPage(pageNumber);
       const content = await page.getTextContent();
-      pages.push(content.items.map(item => ('str' in item ? item.str : '')).join(' '));
+      const items: PdfTextItem[] = [];
+      content.items.forEach(item => {
+        if (!('str' in item) || !item.str.trim()) return;
+        const transform = (item as { transform?: number[] }).transform;
+        if (!Array.isArray(transform)) return;
+        items.push({ str: item.str.trim(), x: Number(transform[4] || 0), y: Number(transform[5] || 0) });
+      });
+      pages.push(items.map(item => item.str).join(' '));
+
+      const rows: Array<{ y: number; items: PdfTextItem[] }> = [];
+      for (const item of items) {
+        const row = rows.find(candidate => Math.abs(candidate.y - item.y) < 4);
+        if (row) row.items.push(item);
+        else rows.push({ y: item.y, items: [item] });
+      }
+      rows.sort((left, right) => right.y - left.y);
+
+      const headerRow = rows.find(row => {
+        const values = row.items.map(item => headerKey(item.str));
+        return values.includes('business') && values.includes('website');
+      });
+      if (headerRow && !columnStarts.length) {
+        columnStarts = [...headerRow.items].sort((left, right) => left.x - right.x).map(item => item.x);
+      }
+      if (columnStarts.length < 2) continue;
+
+      const cellsForRow = (row: { items: PdfTextItem[] }) => {
+        const sortedItems = [...row.items].sort((left, right) => left.x - right.x);
+        return columnStarts.map((start, columnIndex) => {
+          const end = columnStarts[columnIndex + 1] ?? Number.POSITIVE_INFINITY;
+          return sortedItems
+            .filter(item => item.x >= start - 3 && item.x < end - 3)
+            .map(item => item.str)
+            .join(' ')
+            .trim();
+        });
+      };
+
+      for (const row of rows) {
+        if (headerRow && row === headerRow) {
+          if (!headerStored) {
+            tableRows.push(cellsForRow(row).join('\t'));
+            headerStored = true;
+          }
+          continue;
+        }
+        const cells = cellsForRow(row);
+        if (/^\d+$/.test(cells[0] || '') && cells.slice(1).some(Boolean)) tableRows.push(cells.join('\t'));
+      }
     }
     const extractedText = pages.join('\n');
-    const parsedRows = extractedText.trim() ? parseLeadText(extractedText, sourceFileName) : [];
+    const parsedRows = tableRows.length ? parseLeadText(tableRows.join('\n'), sourceFileName) : extractedText.trim() ? parseLeadText(extractedText, sourceFileName) : [];
     return parsedRows.length
       ? parsedRows
       : [emptyLead({
