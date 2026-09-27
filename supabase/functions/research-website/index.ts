@@ -18,6 +18,13 @@ function htmlValue(html: string, pattern: RegExp) {
   return (match?.[1] || '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
 }
 
+function extractContactHints(html: string, text: string) {
+  const emails = Array.from(new Set((html.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || []).map(value => value.toLowerCase()))).slice(0, 5);
+  const phones = Array.from(new Set(text.match(/(?:\+?\d[\d\s().-]{7,}\d)/g) || [])).slice(0, 5);
+  const contactLinks = Array.from(html.matchAll(/href=["']([^"']*(?:contact|about|team|support)[^"']*)["']/gi)).map(match => match[1]).slice(0, 5);
+  return [...emails.map(value => 'Email: ' + value), ...phones.map(value => 'Phone: ' + value), ...contactLinks.map(value => 'Link: ' + value)];
+}
+
 function extractText(html: string) {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -61,6 +68,8 @@ Deno.serve(async (request) => {
     const isHtml = contentType.includes('html') || /<html|<body|<title/i.test(bodyText);
     const title = isHtml ? htmlValue(bodyText, /<title[^>]*>([\s\S]*?)<\/title>/i) : '';
     const description = isHtml ? htmlValue(bodyText, /<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["'][^>]*>/i) || htmlValue(bodyText, /<meta[^>]+content=["']([^"']*)["'][^>]+name=["']description["'][^>]*>/i) : '';
+    const extractedText = isHtml ? extractText(bodyText) : bodyText.slice(0, 12000);
+    const contactHints = extractContactHints(bodyText, extractedText);
     return responseJson({
       success: upstream.ok,
       status: upstream.status,
@@ -69,7 +78,8 @@ Deno.serve(async (request) => {
       contentType,
       title,
       description,
-      extractedText: isHtml ? extractText(bodyText) : bodyText.slice(0, 12000),
+      extractedText,
+      contactHints,
       error: upstream.ok ? null : 'Website returned HTTP ' + upstream.status + ' ' + upstream.statusText,
     });
   } catch (error) {
