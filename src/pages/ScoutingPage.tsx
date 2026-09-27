@@ -160,7 +160,8 @@ export function ScoutingPage() {
       const saved = (data || []) as ScoutLead[];
       setLeads(current => [...saved, ...current]);
       setSelectedIds(new Set(saved.map(lead => lead.id)));
-      setPdfFile(null);
+      setShowPersonalizationPrompt(true);
+      setPdfFile(null;
       setPdfPreview([]);
       toast({ title: saved.length + ' PDF contacts saved', description: 'Select Personalize selected to generate individual drafts.' });
     } catch (error) {
