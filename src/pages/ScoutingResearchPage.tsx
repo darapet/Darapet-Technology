@@ -25,6 +25,7 @@ type ScrapeResult = {
   extractedText?: string;
   contactHints?: string[];
   error?: string;
+  contentType?: string;
 };
 
 function normalizeWebsite(value: unknown) {
@@ -51,7 +52,8 @@ export function ScoutingResearchPage() {
   const [results, setResults] = useState<Record<string, ResearchSnapshot>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [running, setRunning] = useState(false);
+  const [scraping, setScraping] = useState(false);
+  const [researching, setResearching] = useState(false);
   const [prompt, setPrompt] = useState('Review only the fetched website evidence. Identify visible merits, demerits, the website\'s main area of concentration, concrete areas for improvement, and public contact hints. Never invent facts.');
   const [groqKey, setGroqKey] = useState('');
 
@@ -102,69 +104,127 @@ export function ScoutingResearchPage() {
     return parseAiJson<{ website_name?: string; owner_name?: string; merits?: string[]; demerits?: string[]; concentration?: string; improvements?: string[]; contact_hints?: string[] }>(data.choices?.[0]?.message?.content || '');
   };
 
-  const researchLead = async (lead: ScoutLead) => {
-    const website = normalizeWebsite(lead.website) || Object.values(lead.raw_data || {}).map(normalizeWebsite).find(Boolean) || '';
-    if (!website) {
-      const snapshot: ResearchSnapshot = { leadId: lead.id, website: '', status: 'failed', success: false, httpStatus: null, statusText: '', error: 'No website found in this lead\'s imported columns.', merits: [], demerits: [], concentration: '', improvements: [], contactHints: [], analyzedAt: new Date().toISOString() };
-      setResults(current => ({ ...current, [lead.id]: snapshot }));
-      await db.from('scout_leads').update({ research_status: 'needs_manual', research_summary: snapshot.error, research_data: snapshot }).eq('id', lead.id).eq('user_id', user!.id);
-      return;
-    }
+  const websiteForLead = (lead: ScoutLead) => normalizeWebsite(lead.website) || Object.values(lead.raw_data || {}).map(normalizeWebsite).find(Boolean) || '';
+
+  const scrapeLead = async (lead: ScoutLead) => {
+    const website = websiteForLead(lead);
+    if (!website) return;
     setActiveId(lead.id);
     await db.from('scout_leads').update({ research_status: 'researching' }).eq('id', lead.id).eq('user_id', user!.id);
     try {
       const { data, error } = await supabase.functions.invoke('research-website', { body: { url: website } });
       if (error) throw new Error(error.message || 'The website scraper could not be reached.');
       const scraped = data as ScrapeResult;
-      const evidence = scraped.extractedText || scraped.description || '';
-      let ai: Awaited<ReturnType<typeof callGroq>> = null;
-      if (evidence) {
-        try { ai = await callGroq(evidence, lead, website, scraped); } catch (error) { toast({ variant: 'destructive', title: 'AI analysis skipped', description: error instanceof Error ? error.message : 'The website was fetched without AI analysis.' }); }
-      }
       const snapshot: ResearchSnapshot = {
         leadId: lead.id,
         website,
-        status: 'complete',
+        status: scraped.status !== null ? 'scraped' : 'failed',
         success: Boolean(scraped.success),
         httpStatus: scraped.status,
         statusText: scraped.statusText || '',
         finalUrl: scraped.finalUrl,
         title: scraped.title,
-        websiteName: ai?.website_name || scraped.title || '',
-        ownerName: ai?.owner_name || lead.owner_name || '',
+        websiteName: scraped.title || '',
+        ownerName: lead.owner_name || '',
         description: scraped.description,
-        extractedText: scraped.extractedText,
+        extractedText: scraped.extractedText || '',
+        contentType: scraped.contentType,
         error: scraped.error,
-        merits: Array.isArray(ai?.merits) ? ai!.merits!.slice(0, 6) : (scraped.success ? ['Website responded successfully.'] : []),
-        demerits: Array.isArray(ai?.demerits) ? ai!.demerits!.slice(0, 6) : (scraped.success ? [] : [scraped.error || 'The website returned an error.']),
-        concentration: ai?.concentration || scraped.description || '',
+        merits: [],
+        demerits: [],
+        concentration: '',
+        improvements: [],
+        contactHints: scraped.contactHints || [],
+        analyzedAt: new Date().toISOString(),
+      };
+      const { error: saveError } = await db.from('scout_leads').update({
+        research_status: 'pending',
+        research_summary: snapshot.status === 'scraped' ? 'Website text scraped and ready for research.' : snapshot.error || 'Website could not be scraped.',
+        research_data: snapshot,
+      }).eq('id', lead.id).eq('user_id', user!.id);
+      if (saveError) throw new Error(saveError.message);
+      setResults(current => ({ ...current, [lead.id]: snapshot }));
+      setLeads(current => current.map(item => item.id === lead.id ? { ...item, research_status: 'pending', research_summary: snapshot.status === 'scraped' ? 'Website text scraped and ready for research.' : snapshot.error || 'Website could not be scraped.', research_data: snapshot } : item));
+    } catch (error) {
+      const snapshot: ResearchSnapshot = { leadId: lead.id, website, status: 'failed', success: false, httpStatus: null, statusText: '', error: error instanceof Error ? error.message : 'Website scraping failed.', merits: [], demerits: ['The website could not be scraped.'], concentration: '', improvements: [], contactHints: [], analyzedAt: new Date().toISOString() };
+      setResults(current => ({ ...current, [lead.id]: snapshot }));
+      await db.from('scout_leads').update({ research_status: 'needs_manual', research_summary: snapshot.error, research_data: snapshot }).eq('id', lead.id).eq('user_id', user!.id);
+    }
+  };
+
+  const runScrape = async () => {
+    if (scraping || researching || !websiteTargets.length) return;
+    setScraping(true);
+    try {
+      for (const target of websiteTargets) await scrapeLead(target.lead);
+      toast({ title: 'Website text saved', description: 'Review the fetched text below. Click Do research when you are ready for analysis.' });
+    } finally {
+      setActiveId(null);
+      setScraping(false);
+    }
+  };
+
+  const researchLead = async (lead: ScoutLead) => {
+    const stored = results[lead.id];
+    if (!stored || stored.status !== 'scraped') return;
+    const website = stored.website || websiteForLead(lead);
+    const evidence = stored.extractedText || stored.description || '';
+    setActiveId(lead.id);
+    try {
+      let ai: Awaited<ReturnType<typeof callGroq>> = null;
+      if (evidence) {
+        try {
+          ai = await callGroq(evidence, lead, website, { success: stored.success, status: stored.httpStatus, statusText: stored.statusText, finalUrl: stored.finalUrl, title: stored.title, description: stored.description, extractedText: stored.extractedText, contactHints: stored.contactHints, error: stored.error });
+        } catch (error) {
+          toast({ variant: 'destructive', title: 'AI analysis skipped', description: error instanceof Error ? error.message : 'The website text was saved without AI analysis.' });
+        }
+      }
+      const snapshot: ResearchSnapshot = {
+        ...stored,
+        status: 'complete',
+        website,
+        websiteName: ai?.website_name || stored.websiteName || stored.title || '',
+        ownerName: ai?.owner_name || stored.ownerName || lead.owner_name || '',
+        merits: Array.isArray(ai?.merits) ? ai!.merits!.slice(0, 6) : (stored.success ? ['Website text was fetched successfully.'] : []),
+        demerits: Array.isArray(ai?.demerits) ? ai!.demerits!.slice(0, 6) : (stored.success ? [] : [stored.error || 'The website returned an error.']),
+        concentration: ai?.concentration || stored.description || '',
         improvements: Array.isArray(ai?.improvements) ? ai!.improvements!.slice(0, 6) : [],
-        contactHints: Array.from(new Set([...(scraped.contactHints || []), ...(ai?.contact_hints || [])])).slice(0, 8),
+        contactHints: Array.from(new Set([...(stored.contactHints || []), ...(ai?.contact_hints || [])])).slice(0, 8),
         analyzedAt: new Date().toISOString(),
       };
       const summary = [snapshot.websiteName, snapshot.description, snapshot.concentration].filter(Boolean).join(' — ') || snapshot.error || 'Research complete.';
       const { error: saveError } = await db.from('scout_leads').update({ research_status: snapshot.success ? 'researched' : 'needs_manual', research_summary: summary, pain_points: snapshot.demerits, research_data: snapshot }).eq('id', lead.id).eq('user_id', user!.id);
       if (saveError) throw new Error(saveError.message);
       setResults(current => ({ ...current, [lead.id]: snapshot }));
-      setLeads(current => current.map(item => item.id === lead.id ? { ...item, website, research_status: snapshot.success ? 'researched' : 'needs_manual', research_summary: summary, pain_points: snapshot.demerits, research_data: snapshot } : item));
+      setLeads(current => current.map(item => item.id === lead.id ? { ...item, research_status: snapshot.success ? 'researched' : 'needs_manual', research_summary: summary, pain_points: snapshot.demerits, research_data: snapshot } : item));
     } catch (error) {
-      const snapshot: ResearchSnapshot = { leadId: lead.id, website, status: 'failed', success: false, httpStatus: null, statusText: '', error: error instanceof Error ? error.message : 'Research failed.', merits: [], demerits: ['The website could not be fetched.'], concentration: '', improvements: [], contactHints: [], analyzedAt: new Date().toISOString() };
+      const snapshot: ResearchSnapshot = { ...stored, status: 'complete', success: false, error: error instanceof Error ? error.message : 'Research failed.', demerits: ['The website could not be analyzed.'], analyzedAt: new Date().toISOString() };
       setResults(current => ({ ...current, [lead.id]: snapshot }));
       await db.from('scout_leads').update({ research_status: 'needs_manual', research_summary: snapshot.error, research_data: snapshot }).eq('id', lead.id).eq('user_id', user!.id);
     }
   };
 
   const runResearch = async () => {
-    if (running || !websiteTargets.length) return;
-    setRunning(true);
-    for (const target of websiteTargets) await researchLead(target.lead);
-    setActiveId(null);
-    setRunning(false);
-    toast({ title: 'Research run finished', description: 'Each lead was processed in order. Review the findings below before personalizing email.' });
+    if (scraping || researching) return;
+    const scrapedTargets = websiteTargets.filter(target => results[target.lead.id]?.status === 'scraped');
+    if (!scrapedTargets.length) {
+      toast({ variant: 'destructive', title: 'Scrape the websites first', description: 'Click Scrape websites, review the saved text, then click Do research.' });
+      return;
+    }
+    setResearching(true);
+    try {
+      for (const target of scrapedTargets) await researchLead(target.lead);
+      toast({ title: 'Research finished', description: 'The saved website evidence was analyzed. Review the findings below before personalizing email.' });
+    } finally {
+      setActiveId(null);
+      setResearching(false);
+    }
   };
 
+  const scrapedCount = websiteTargets.filter(target => results[target.lead.id]?.status === 'scraped' || results[target.lead.id]?.status === 'complete').length;
   const completed = websiteTargets.filter(target => results[target.lead.id]?.status === 'complete' || results[target.lead.id]?.status === 'failed').length;
   const currentResult = activeId ? results[activeId] : null;
+  const progressCount = scraping ? scrapedCount : researching ? completed : scrapedCount;
   const currentLead = activeId ? leads.find(lead => lead.id === activeId) : null;
 
   if (loading) return <div className="max-w-5xl mx-auto space-y-4"><Skeleton className="h-10 w-72" /><Skeleton className="h-28 rounded-xl" />{[1, 2, 3].map(item => <Skeleton key={item} className="h-40 rounded-xl" />)}</div>;
@@ -176,23 +236,23 @@ export function ScoutingResearchPage() {
           <Link href="/scouting" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-4"><ArrowLeft className="w-4 h-4" /> Back to scouting</Link>
           <div className="flex items-center gap-2 text-primary text-sm font-semibold"><Search className="w-4 h-4" /> Lead research</div>
           <h1 className="text-3xl font-bold tracking-tight mt-2">Research websites one by one</h1>
-          <p className="text-muted-foreground mt-2 max-w-2xl">The first website is fetched, analyzed, and displayed before the next lead starts. A slow or unavailable site does not stop the queue.</p>
+          <p className="text-muted-foreground mt-2 max-w-2xl">First scrape and save every website's text so you can see the evidence. Only after that does Do research analyze it.</p>
         </div>
-        <div className="flex gap-2 shrink-0"><Button variant="outline" onClick={() => setLocation('/scouting')}><ArrowLeft className="w-4 h-4 mr-2" /> Scouting</Button><Button onClick={() => void runResearch()} disabled={running || !websiteTargets.length}>{running ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />} {running ? 'Researching…' : 'Research websites'}</Button></div>
+        <div className="flex flex-wrap gap-2 shrink-0"><Button variant="outline" onClick={() => setLocation('/scouting')}><ArrowLeft className="w-4 h-4 mr-2" /> Scouting</Button><Button variant="outline" onClick={() => void runScrape()} disabled={scraping || researching || !websiteTargets.length}>{scraping ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Globe2 className="w-4 h-4 mr-2" />} {scraping ? 'Scraping…' : 'Scrape websites'}</Button><Button onClick={() => void runResearch()} disabled={scraping || researching || !scrapedCount}>{researching ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />} {researching ? 'Doing research…' : 'Do research'}</Button></div>
       </div>
 
       <Card className="border-primary/20 bg-primary/[0.03]">
         <CardContent className="p-5 space-y-3">
-          <div className="flex items-center justify-between gap-3"><div><p className="font-semibold">Research progress</p><p className="text-sm text-muted-foreground">{completed} of {websiteTargets.length} websites researched</p></div>{activeId && <Badge variant="outline"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Researching website</Badge>}</div>
-          <Progress value={leads.length ? Math.round((completed / leads.length) * 100) : 0} />
-          {activeId && <p className="text-sm text-muted-foreground break-all">Researching website {(currentResult?.website || currentLead?.website || 'with no detected URL')}…</p>}
+          <div className="flex items-center justify-between gap-3"><div><p className="font-semibold">Research progress</p><p className="text-sm text-muted-foreground">{scrapedCount} of {websiteTargets.length} website texts saved · {completed} researched</p></div>{activeId && <Badge variant="outline"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> {scraping ? 'Scraping website' : 'Doing research'}</Badge>}</div>
+          <Progress value={websiteTargets.length ? Math.round((progressCount / websiteTargets.length) * 100) : 0} />
+          {activeId && <p className="text-sm text-muted-foreground break-all">{scraping ? 'Scraping website ' : 'Analyzing saved evidence from '}{(currentResult?.website || currentLead?.website || 'with no detected URL')}…</p>}
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle className="text-base flex items-center gap-2"><Globe2 className="w-4 h-4 text-primary" /> Websites found in this list</CardTitle><p className="text-sm text-muted-foreground mt-1">This is the discovery step. Nothing is visited or analyzed until you click Research websites.</p></div><Badge variant="outline">{websiteTargets.length} found</Badge></div></CardHeader>
+        <CardHeader><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle className="text-base flex items-center gap-2"><Globe2 className="w-4 h-4 text-primary" /> Websites found in this list</CardTitle><p className="text-sm text-muted-foreground mt-1">This is the discovery step. Click Scrape websites to fetch and save the text. Review it here before clicking Do research.</p></div><Badge variant="outline">{websiteTargets.length} found</Badge></div></CardHeader>
         <CardContent className="space-y-2">
-          {websiteTargets.length ? websiteTargets.map((target, index) => { const result = results[target.lead.id]; return <div key={target.lead.id} className="flex items-center gap-3 rounded-lg border p-3"><span className="text-xs text-muted-foreground w-6">{index + 1}</span><div className="min-w-0 flex-1"><p className="font-medium truncate">{target.lead.business_name}</p><p className="text-sm text-muted-foreground break-all">{target.website}</p></div>{result ? <Badge variant="outline" className="text-green-600 border-green-200">Processed</Badge> : <Badge variant="secondary">Queued</Badge>}</div>; }) : <p className="text-sm text-muted-foreground py-4">No website values were found in this list.</p>}
+          {websiteTargets.length ? websiteTargets.map((target, index) => { const result = results[target.lead.id]; return <div key={target.lead.id} className="flex items-center gap-3 rounded-lg border p-3"><span className="text-xs text-muted-foreground w-6">{index + 1}</span><div className="min-w-0 flex-1"><p className="font-medium truncate">{target.lead.business_name}</p><p className="text-sm text-muted-foreground break-all">{target.website}</p></div>{result?.status === 'complete' ? <Badge variant="outline" className="text-green-600 border-green-200">Researched</Badge> : result?.status === 'scraped' ? <Badge variant="outline" className="text-blue-600 border-blue-200">Text saved</Badge> : result ? <Badge variant="outline" className="text-amber-600 border-amber-200">Needs retry</Badge> : <Badge variant="secondary">Queued</Badge>}</div>; }) : <p className="text-sm text-muted-foreground py-4">No website values were found in this list.</p>}
           {missingWebsiteLeads.length > 0 && <p className="text-xs text-amber-700 bg-amber-500/10 rounded-lg p-3">{missingWebsiteLeads.length} lead{missingWebsiteLeads.length === 1 ? '' : 's'} had no recognizable website and will not be sent to the research queue.</p>}
         </CardContent>
       </Card>
@@ -202,7 +262,7 @@ export function ScoutingResearchPage() {
         <CardContent><Label htmlFor="research-prompt">Optional rules for the AI analysis</Label><Textarea id="research-prompt" value={prompt} onChange={event => setPrompt(event.target.value)} className="min-h-20 mt-2" /><p className="text-xs text-muted-foreground mt-2">The scraper always uses the website stored on each lead. The instruction only controls how fetched evidence is summarized.</p></CardContent>
       </Card>
 
-      {!websiteTargets.length ? <Card><CardContent className="py-16 text-center text-muted-foreground">No websites were found for this research run.</CardContent></Card> : <div className="space-y-4">{websiteTargets.map((target, index) => { const lead = target.lead; const website = target.website; const result = results[lead.id]; const isActive = activeId === lead.id; return <Card key={lead.id} className={isActive ? 'border-primary shadow-sm' : ''}><CardHeader className="pb-3"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs text-muted-foreground">Website {index + 1} of {websiteTargets.length}</p><CardTitle className="text-lg mt-1">{result?.websiteName || lead.business_name}</CardTitle><p className="text-sm text-muted-foreground mt-1 flex items-center gap-1 break-all"><Globe2 className="w-3.5 h-3.5 shrink-0" /> {result?.website || website || lead.website || 'Website not detected'}</p></div>{isActive ? <Badge><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Researching website…</Badge> : result?.success ? <Badge variant="outline" className="text-green-600 border-green-200"><CheckCircle2 className="w-3 h-3 mr-1" /> Information received</Badge> : result ? <Badge variant="outline" className="text-amber-600 border-amber-200"><TriangleAlert className="w-3 h-3 mr-1" /> Needs review</Badge> : <Badge variant="secondary">Queued</Badge>}</div></CardHeader>{result && <CardContent className="space-y-4"><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-lg border bg-muted/30 p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Website</p><p className="font-medium mt-1">{result.websiteName || result.title || lead.business_name}</p><p className="text-sm text-muted-foreground mt-1">{result.description || 'No description found.'}</p>{result.finalUrl && <a href={result.finalUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-primary mt-2"><ExternalLink className="w-3.5 h-3.5" /> Open site</a>}</div><div className="rounded-lg border bg-muted/30 p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Contact generated</p>{result.ownerName && <p className="text-sm font-medium mt-1">Owner / contact: {result.ownerName}</p>}{result.contactHints.length ? <ul className="text-sm mt-2 space-y-1">{result.contactHints.map(item => <li key={item} className="break-all">{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-1">No public contact details found.</p>}</div></div><div className="grid md:grid-cols-3 gap-3"><div className="rounded-lg border p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Merits</p>{result.merits.length ? <ul className="list-disc pl-4 mt-2 text-sm space-y-1">{result.merits.map(item => <li key={item}>{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-2">None recorded</p>}</div><div className="rounded-lg border p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Demerits</p>{result.demerits.length ? <ul className="list-disc pl-4 mt-2 text-sm space-y-1">{result.demerits.map(item => <li key={item}>{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-2">None recorded</p>}</div><div className="rounded-lg border p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Area of concentration</p><p className="text-sm mt-2">{result.concentration || 'No clear focus found in the fetched evidence.'}</p><p className="text-xs font-semibold uppercase text-muted-foreground mt-4">Areas for improvement</p>{result.improvements.length ? <ul className="list-disc pl-4 mt-2 text-sm space-y-1">{result.improvements.map(item => <li key={item}>{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-2">None recorded</p>}</div></div>{result.error && <p className="text-sm text-amber-700 bg-amber-500/10 rounded-lg p-3">{result.error}</p>}<p className="text-xs text-muted-foreground">{result.httpStatus ? 'HTTP ' + result.httpStatus + ' ' + result.statusText : 'Request did not return an HTTP response.'}</p></CardContent>}</Card>; })}</div>}
+      {!websiteTargets.length ? <Card><CardContent className="py-16 text-center text-muted-foreground">No websites were found for this research run.</CardContent></Card> : <div className="space-y-4">{websiteTargets.map((target, index) => { const lead = target.lead; const website = target.website; const result = results[lead.id]; const isActive = activeId === lead.id; return <Card key={lead.id} className={isActive ? 'border-primary shadow-sm' : ''}><CardHeader className="pb-3"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs text-muted-foreground">Website {index + 1} of {websiteTargets.length}</p><CardTitle className="text-lg mt-1">{result?.websiteName || lead.business_name}</CardTitle><p className="text-sm text-muted-foreground mt-1 flex items-center gap-1 break-all"><Globe2 className="w-3.5 h-3.5 shrink-0" /> {result?.website || website || lead.website || 'Website not detected'}</p></div>{isActive ? <Badge><Loader2 className="w-3 h-3 mr-1 animate-spin" /> {scraping ? 'Scraping website…' : 'Doing research…'}</Badge> : result?.status === 'complete' ? <Badge variant="outline" className="text-green-600 border-green-200"><CheckCircle2 className="w-3 h-3 mr-1" /> Information received</Badge> : result?.status === 'scraped' ? <Badge variant="outline" className="text-blue-600 border-blue-200"><Globe2 className="w-3 h-3 mr-1" /> Text saved</Badge> : result ? <Badge variant="outline" className="text-amber-600 border-amber-200"><TriangleAlert className="w-3 h-3 mr-1" /> Needs review</Badge> : <Badge variant="secondary">Queued</Badge>}</div></CardHeader>{result && <CardContent className="space-y-4">{result.status === 'scraped' && <p className="text-sm text-blue-700 bg-blue-500/10 rounded-lg p-3">Website text is saved. Review the evidence below, then click Do research when you are ready.</p>}{result.extractedText ? <details open={result.status === 'scraped'} className="rounded-lg border bg-muted/30 p-3"><summary className="cursor-pointer font-semibold text-sm">Scraped website text ({result.extractedText.length.toLocaleString()} characters)</summary><div className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md bg-background p-3 text-sm leading-6">{result.extractedText}</div></details> : <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">No readable website text was returned.</div>}<div className="grid sm:grid-cols-2 gap-3"><div className="rounded-lg border bg-muted/30 p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Website</p><p className="font-medium mt-1">{result.websiteName || result.title || lead.business_name}</p><p className="text-sm text-muted-foreground mt-1">{result.description || 'No description found.'}</p>{result.finalUrl && <a href={result.finalUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-primary mt-2"><ExternalLink className="w-3.5 h-3.5" /> Open site</a>}</div><div className="rounded-lg border bg-muted/30 p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Contact generated</p>{result.ownerName && <p className="text-sm font-medium mt-1">Owner / contact: {result.ownerName}</p>}{result.contactHints.length ? <ul className="text-sm mt-2 space-y-1">{result.contactHints.map(item => <li key={item} className="break-all">{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-1">No public contact details found.</p>}</div></div><div className="grid md:grid-cols-3 gap-3"><div className="rounded-lg border p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Merits</p>{result.merits.length ? <ul className="list-disc pl-4 mt-2 text-sm space-y-1">{result.merits.map(item => <li key={item}>{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-2">None recorded</p>}</div><div className="rounded-lg border p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Demerits</p>{result.demerits.length ? <ul className="list-disc pl-4 mt-2 text-sm space-y-1">{result.demerits.map(item => <li key={item}>{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-2">None recorded</p>}</div><div className="rounded-lg border p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Area of concentration</p><p className="text-sm mt-2">{result.concentration || 'No clear focus found in the fetched evidence.'}</p><p className="text-xs font-semibold uppercase text-muted-foreground mt-4">Areas for improvement</p>{result.improvements.length ? <ul className="list-disc pl-4 mt-2 text-sm space-y-1">{result.improvements.map(item => <li key={item}>{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-2">None recorded</p>}</div></div>{result.error && <p className="text-sm text-amber-700 bg-amber-500/10 rounded-lg p-3">{result.error}</p>}<p className="text-xs text-muted-foreground">{result.httpStatus ? 'HTTP ' + result.httpStatus + ' ' + result.statusText : 'Request did not return an HTTP response.'}</p></CardContent>}</Card>; })}</div>}
 
       <Card className="border-green-200 bg-green-500/[0.03]"><CardContent className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><p className="font-semibold flex items-center gap-2"><Mail className="w-4 h-4 text-green-600" /> Research complete? Personalize your emails next.</p><p className="text-sm text-muted-foreground mt-1">Review the findings above, then return to the lead list to choose a template and generate one draft per email address.</p></div><Button onClick={() => setLocation('/scouting')}><Mail className="w-4 h-4 mr-2" /> Personalize emails</Button></CardContent></Card>
     </div>
