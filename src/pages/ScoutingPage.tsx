@@ -26,7 +26,15 @@ type StatusFilter = 'all' | 'ready' | 'drafted' | 'sent' | 'opted_out';
 const db = supabase as any;
 
 function storedResearch(lead: ScoutLead): ResearchSnapshot | null {
-  return lead.research_data && typeof lead.research_data === 'object' ? lead.research_data : null;
+  const value = lead.research_data && typeof lead.research_data === 'object' ? lead.research_data : null;
+  if (!value) return null;
+  return {
+    ...value,
+    merits: Array.isArray(value.merits) ? value.merits : [],
+    demerits: Array.isArray(value.demerits) ? value.demerits : [],
+    improvements: Array.isArray(value.improvements) ? value.improvements : [],
+    contactHints: Array.isArray(value.contactHints) ? value.contactHints : [],
+  };
 }
 
 function displayWebsite(url: string) {
