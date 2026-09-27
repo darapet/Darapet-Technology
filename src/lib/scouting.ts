@@ -25,6 +25,36 @@ export type ScoutLead = {
   source_file_type?: string | null;
   source_file_size?: number | null;
   created_at?: string;
+  research_data?: ResearchSnapshot | null;
+  email_drafts?: ScoutEmailDraft[];
+};
+
+export type ResearchSnapshot = {
+  leadId: string;
+  website: string;
+  status: 'complete' | 'failed';
+  success: boolean;
+  httpStatus: number | null;
+  statusText: string;
+  finalUrl?: string;
+  title?: string;
+  websiteName?: string;
+  ownerName?: string;
+  description?: string;
+  extractedText?: string;
+  error?: string;
+  merits: string[];
+  demerits: string[];
+  concentration: string;
+  improvements: string[];
+  contactHints: string[];
+  analyzedAt?: string;
+};
+
+export type ScoutEmailDraft = {
+  recipientEmail: string;
+  subject: string;
+  body: string;
 };
 
 
@@ -48,7 +78,7 @@ function extractWebsite(fields: string[]) {
     if (!value || EMAIL_RE.test(value)) continue;
     const direct = normalizeUrl(value);
     if (direct) return direct;
-    const embedded = value.match(/(?:https?:\/\/|www\.)[^\s<>'"]+/i)?.[0] || '';
+    const embedded = value.match(/(?:https?:\/\/|www\.)[^\s<>'"]+|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s<>'"]*)?/i)?.[0] || '';
     const normalized = normalizeUrl(embedded);
     if (normalized) return normalized;
   }
@@ -100,7 +130,7 @@ const HEADER_ALIASES = {
   firstName: ['firstname', 'givenname'],
   lastName: ['lastname', 'surname', 'familyname'],
   email: ['email', 'emailaddress', 'emailaddr', 'mail', 'emailid', 'owneremail', 'contactemail', 'developeremail', 'devemail', 'founderemail'],
-  website: ['website', 'websiteurl', 'url', 'domain', 'web', 'site', 'homepage', 'appwebsite', 'appurl', 'productwebsite', 'producturl'],
+  website: ['website', 'websiteurl', 'websiteaddress', 'websitelink', 'companywebsite', 'url', 'domain', 'web', 'site', 'homepage', 'appwebsite', 'appurl', 'productwebsite', 'producturl'],
   source: ['sourceurl', 'source', 'sourcewebsite'],
 } as const;
 
@@ -180,6 +210,11 @@ function emptyLead(partial: Partial<ScoutLead>, sourceFileName?: string): ScoutL
     sent_at: null,
     source_file_name: sourceFileName || null,
   };
+}
+
+export function extractLeadEmails(lead: Pick<ScoutLead, 'email' | 'raw_data'>): string[] {
+  const matches = [lead.email || '', ...Object.values(lead.raw_data || {})].flatMap(value => String(value || '').match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || []);
+  return Array.from(new Set(matches.map(email => email.toLowerCase())));
 }
 
 export function parseLeadText(text: string, sourceFileName?: string): ScoutLead[] {
