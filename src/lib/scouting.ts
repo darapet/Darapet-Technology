@@ -32,7 +32,7 @@ export type ScoutLead = {
 export type ResearchSnapshot = {
   leadId: string;
   website: string;
-  status: 'complete' | 'failed';
+  status: 'scraped' | 'complete' | 'failed';
   success: boolean;
   httpStatus: number | null;
   statusText: string;
