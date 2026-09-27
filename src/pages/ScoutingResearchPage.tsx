@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'wouter';
 import { ArrowLeft, CheckCircle2, ExternalLink, Globe2, Loader2, Mail, Search, Sparkles, TriangleAlert } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -54,7 +54,6 @@ export function ScoutingResearchPage() {
   const [running, setRunning] = useState(false);
   const [prompt, setPrompt] = useState('Review only the fetched website evidence. Identify visible merits, demerits, the website\'s main area of concentration, concrete areas for improvement, and public contact hints. Never invent facts.');
   const [groqKey, setGroqKey] = useState('');
-  const started = useRef(false);
 
   useEffect(() => {
     if (!user) return;
@@ -77,6 +76,11 @@ export function ScoutingResearchPage() {
   }, [targetImportId, targetLeadId, toast, user]);
 
   const aiKey = profile?.groq_api_key || groqKey;
+  const websiteTargets = useMemo(() => leads.map(lead => {
+    const website = normalizeWebsite(lead.website) || Object.values(lead.raw_data || {}).map(normalizeWebsite).find(Boolean) || '';
+    return website ? { lead, website } : null;
+  }).filter((target): target is { lead: ScoutLead; website: string } => Boolean(target)), [leads]);
+  const missingWebsiteLeads = leads.filter(lead => !websiteTargets.some(target => target.lead.id === lead.id));
 
   const callGroq = async (evidence: string, lead: ScoutLead, website: string, scraped: ScrapeResult) => {
     if (!aiKey) return null;
@@ -151,22 +155,15 @@ export function ScoutingResearchPage() {
   };
 
   const runResearch = async () => {
-    if (running || !leads.length) return;
+    if (running || !websiteTargets.length) return;
     setRunning(true);
-    for (const lead of leads) await researchLead(lead);
+    for (const target of websiteTargets) await researchLead(target.lead);
     setActiveId(null);
     setRunning(false);
     toast({ title: 'Research run finished', description: 'Each lead was processed in order. Review the findings below before personalizing email.' });
   };
 
-  useEffect(() => {
-    if (!loading && leads.length && !started.current) {
-      started.current = true;
-      void runResearch();
-    }
-  }, [leads, loading]);
-
-  const completed = leads.filter(lead => results[lead.id]?.status === 'complete' || results[lead.id]?.status === 'failed').length;
+  const completed = websiteTargets.filter(target => results[target.lead.id]?.status === 'complete' || results[target.lead.id]?.status === 'failed').length;
   const currentResult = activeId ? results[activeId] : null;
   const currentLead = activeId ? leads.find(lead => lead.id === activeId) : null;
 
@@ -181,14 +178,22 @@ export function ScoutingResearchPage() {
           <h1 className="text-3xl font-bold tracking-tight mt-2">Research websites one by one</h1>
           <p className="text-muted-foreground mt-2 max-w-2xl">The first website is fetched, analyzed, and displayed before the next lead starts. A slow or unavailable site does not stop the queue.</p>
         </div>
-        <div className="flex gap-2 shrink-0"><Button variant="outline" onClick={() => setLocation('/scouting')}><ArrowLeft className="w-4 h-4 mr-2" /> Scouting</Button><Button onClick={() => { started.current = true; void runResearch(); }} disabled={running || !leads.length}>{running ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />} {running ? 'Researching…' : 'Run again'}</Button></div>
+        <div className="flex gap-2 shrink-0"><Button variant="outline" onClick={() => setLocation('/scouting')}><ArrowLeft className="w-4 h-4 mr-2" /> Scouting</Button><Button onClick={() => void runResearch()} disabled={running || !websiteTargets.length}>{running ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />} {running ? 'Researching…' : 'Research websites'}</Button></div>
       </div>
 
       <Card className="border-primary/20 bg-primary/[0.03]">
         <CardContent className="p-5 space-y-3">
-          <div className="flex items-center justify-between gap-3"><div><p className="font-semibold">Research progress</p><p className="text-sm text-muted-foreground">{completed} of {leads.length} leads processed</p></div>{activeId && <Badge variant="outline"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Researching website</Badge>}</div>
+          <div className="flex items-center justify-between gap-3"><div><p className="font-semibold">Research progress</p><p className="text-sm text-muted-foreground">{completed} of {websiteTargets.length} websites researched</p></div>{activeId && <Badge variant="outline"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Researching website</Badge>}</div>
           <Progress value={leads.length ? Math.round((completed / leads.length) * 100) : 0} />
           {activeId && <p className="text-sm text-muted-foreground break-all">Researching website {(currentResult?.website || currentLead?.website || 'with no detected URL')}…</p>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle className="text-base flex items-center gap-2"><Globe2 className="w-4 h-4 text-primary" /> Websites found in this list</CardTitle><p className="text-sm text-muted-foreground mt-1">This is the discovery step. Nothing is visited or analyzed until you click Research websites.</p></div><Badge variant="outline">{websiteTargets.length} found</Badge></div></CardHeader>
+        <CardContent className="space-y-2">
+          {websiteTargets.length ? websiteTargets.map((target, index) => { const result = results[target.lead.id]; return <div key={target.lead.id} className="flex items-center gap-3 rounded-lg border p-3"><span className="text-xs text-muted-foreground w-6">{index + 1}</span><div className="min-w-0 flex-1"><p className="font-medium truncate">{target.lead.business_name}</p><p className="text-sm text-muted-foreground break-all">{target.website}</p></div>{result ? <Badge variant="outline" className="text-green-600 border-green-200">Processed</Badge> : <Badge variant="secondary">Queued</Badge>}</div>; }) : <p className="text-sm text-muted-foreground py-4">No website values were found in this list.</p>}
+          {missingWebsiteLeads.length > 0 && <p className="text-xs text-amber-700 bg-amber-500/10 rounded-lg p-3">{missingWebsiteLeads.length} lead{missingWebsiteLeads.length === 1 ? '' : 's'} had no recognizable website and will not be sent to the research queue.</p>}
         </CardContent>
       </Card>
 
@@ -197,7 +202,7 @@ export function ScoutingResearchPage() {
         <CardContent><Label htmlFor="research-prompt">Optional rules for the AI analysis</Label><Textarea id="research-prompt" value={prompt} onChange={event => setPrompt(event.target.value)} className="min-h-20 mt-2" /><p className="text-xs text-muted-foreground mt-2">The scraper always uses the website stored on each lead. The instruction only controls how fetched evidence is summarized.</p></CardContent>
       </Card>
 
-      {!leads.length ? <Card><CardContent className="py-16 text-center text-muted-foreground">No leads were found for this research run.</CardContent></Card> : <div className="space-y-4">{leads.map((lead, index) => { const result = results[lead.id]; const isActive = activeId === lead.id; return <Card key={lead.id} className={isActive ? 'border-primary shadow-sm' : ''}><CardHeader className="pb-3"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs text-muted-foreground">Lead {index + 1} of {leads.length}</p><CardTitle className="text-lg mt-1">{result?.websiteName || lead.business_name}</CardTitle><p className="text-sm text-muted-foreground mt-1 flex items-center gap-1 break-all"><Globe2 className="w-3.5 h-3.5 shrink-0" /> {result?.website || lead.website || 'Website not detected'}</p></div>{isActive ? <Badge><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Researching website…</Badge> : result?.success ? <Badge variant="outline" className="text-green-600 border-green-200"><CheckCircle2 className="w-3 h-3 mr-1" /> Information received</Badge> : result ? <Badge variant="outline" className="text-amber-600 border-amber-200"><TriangleAlert className="w-3 h-3 mr-1" /> Needs review</Badge> : <Badge variant="secondary">Queued</Badge>}</div></CardHeader>{result && <CardContent className="space-y-4"><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-lg border bg-muted/30 p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Website</p><p className="font-medium mt-1">{result.websiteName || result.title || lead.business_name}</p><p className="text-sm text-muted-foreground mt-1">{result.description || 'No description found.'}</p>{result.finalUrl && <a href={result.finalUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-primary mt-2"><ExternalLink className="w-3.5 h-3.5" /> Open site</a>}</div><div className="rounded-lg border bg-muted/30 p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Contact generated</p>{result.ownerName && <p className="text-sm font-medium mt-1">Owner / contact: {result.ownerName}</p>}{result.contactHints.length ? <ul className="text-sm mt-2 space-y-1">{result.contactHints.map(item => <li key={item} className="break-all">{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-1">No public contact details found.</p>}</div></div><div className="grid md:grid-cols-3 gap-3"><div className="rounded-lg border p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Merits</p>{result.merits.length ? <ul className="list-disc pl-4 mt-2 text-sm space-y-1">{result.merits.map(item => <li key={item}>{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-2">None recorded</p>}</div><div className="rounded-lg border p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Demerits</p>{result.demerits.length ? <ul className="list-disc pl-4 mt-2 text-sm space-y-1">{result.demerits.map(item => <li key={item}>{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-2">None recorded</p>}</div><div className="rounded-lg border p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Area of concentration</p><p className="text-sm mt-2">{result.concentration || 'No clear focus found in the fetched evidence.'}</p><p className="text-xs font-semibold uppercase text-muted-foreground mt-4">Areas for improvement</p>{result.improvements.length ? <ul className="list-disc pl-4 mt-2 text-sm space-y-1">{result.improvements.map(item => <li key={item}>{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-2">None recorded</p>}</div></div>{result.error && <p className="text-sm text-amber-700 bg-amber-500/10 rounded-lg p-3">{result.error}</p>}<p className="text-xs text-muted-foreground">{result.httpStatus ? 'HTTP ' + result.httpStatus + ' ' + result.statusText : 'Request did not return an HTTP response.'}</p></CardContent>}</Card>; })}</div>}
+      {!websiteTargets.length ? <Card><CardContent className="py-16 text-center text-muted-foreground">No websites were found for this research run.</CardContent></Card> : <div className="space-y-4">{websiteTargets.map((target, index) => { const lead = target.lead; const website = target.website; const result = results[lead.id]; const isActive = activeId === lead.id; return <Card key={lead.id} className={isActive ? 'border-primary shadow-sm' : ''}><CardHeader className="pb-3"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs text-muted-foreground">Website {index + 1} of {websiteTargets.length}</p><CardTitle className="text-lg mt-1">{result?.websiteName || lead.business_name}</CardTitle><p className="text-sm text-muted-foreground mt-1 flex items-center gap-1 break-all"><Globe2 className="w-3.5 h-3.5 shrink-0" /> {result?.website || website || lead.website || 'Website not detected'}</p></div>{isActive ? <Badge><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Researching website…</Badge> : result?.success ? <Badge variant="outline" className="text-green-600 border-green-200"><CheckCircle2 className="w-3 h-3 mr-1" /> Information received</Badge> : result ? <Badge variant="outline" className="text-amber-600 border-amber-200"><TriangleAlert className="w-3 h-3 mr-1" /> Needs review</Badge> : <Badge variant="secondary">Queued</Badge>}</div></CardHeader>{result && <CardContent className="space-y-4"><div className="grid sm:grid-cols-2 gap-3"><div className="rounded-lg border bg-muted/30 p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Website</p><p className="font-medium mt-1">{result.websiteName || result.title || lead.business_name}</p><p className="text-sm text-muted-foreground mt-1">{result.description || 'No description found.'}</p>{result.finalUrl && <a href={result.finalUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-primary mt-2"><ExternalLink className="w-3.5 h-3.5" /> Open site</a>}</div><div className="rounded-lg border bg-muted/30 p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Contact generated</p>{result.ownerName && <p className="text-sm font-medium mt-1">Owner / contact: {result.ownerName}</p>}{result.contactHints.length ? <ul className="text-sm mt-2 space-y-1">{result.contactHints.map(item => <li key={item} className="break-all">{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-1">No public contact details found.</p>}</div></div><div className="grid md:grid-cols-3 gap-3"><div className="rounded-lg border p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Merits</p>{result.merits.length ? <ul className="list-disc pl-4 mt-2 text-sm space-y-1">{result.merits.map(item => <li key={item}>{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-2">None recorded</p>}</div><div className="rounded-lg border p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Demerits</p>{result.demerits.length ? <ul className="list-disc pl-4 mt-2 text-sm space-y-1">{result.demerits.map(item => <li key={item}>{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-2">None recorded</p>}</div><div className="rounded-lg border p-3"><p className="text-xs font-semibold uppercase text-muted-foreground">Area of concentration</p><p className="text-sm mt-2">{result.concentration || 'No clear focus found in the fetched evidence.'}</p><p className="text-xs font-semibold uppercase text-muted-foreground mt-4">Areas for improvement</p>{result.improvements.length ? <ul className="list-disc pl-4 mt-2 text-sm space-y-1">{result.improvements.map(item => <li key={item}>{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-2">None recorded</p>}</div></div>{result.error && <p className="text-sm text-amber-700 bg-amber-500/10 rounded-lg p-3">{result.error}</p>}<p className="text-xs text-muted-foreground">{result.httpStatus ? 'HTTP ' + result.httpStatus + ' ' + result.statusText : 'Request did not return an HTTP response.'}</p></CardContent>}</Card>; })}</div>}
 
       <Card className="border-green-200 bg-green-500/[0.03]"><CardContent className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><p className="font-semibold flex items-center gap-2"><Mail className="w-4 h-4 text-green-600" /> Research complete? Personalize your emails next.</p><p className="text-sm text-muted-foreground mt-1">Review the findings above, then return to the lead list to choose a template and generate one draft per email address.</p></div><Button onClick={() => setLocation('/scouting')}><Mail className="w-4 h-4 mr-2" /> Personalize emails</Button></CardContent></Card>
     </div>
