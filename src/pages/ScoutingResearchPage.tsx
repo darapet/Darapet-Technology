@@ -168,6 +168,7 @@ export function ScoutingResearchPage() {
 
   const completed = leads.filter(lead => results[lead.id]?.status === 'complete' || results[lead.id]?.status === 'failed').length;
   const currentResult = activeId ? results[activeId] : null;
+  const currentLead = activeId ? leads.find(lead => lead.id === activeId) : null;
 
   if (loading) return <div className="max-w-5xl mx-auto space-y-4"><Skeleton className="h-10 w-72" /><Skeleton className="h-28 rounded-xl" />{[1, 2, 3].map(item => <Skeleton key={item} className="h-40 rounded-xl" />)}</div>;
 
@@ -187,7 +188,7 @@ export function ScoutingResearchPage() {
         <CardContent className="p-5 space-y-3">
           <div className="flex items-center justify-between gap-3"><div><p className="font-semibold">Research progress</p><p className="text-sm text-muted-foreground">{completed} of {leads.length} leads processed</p></div>{activeId && <Badge variant="outline"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Researching website</Badge>}</div>
           <Progress value={leads.length ? Math.round((completed / leads.length) * 100) : 0} />
-          {currentResult && activeId && <p className="text-sm text-muted-foreground break-all">Researching website {currentResult.website || 'with no detected URL'}…</p>}
+          {activeId && <p className="text-sm text-muted-foreground break-all">Researching website {(currentResult?.website || currentLead?.website || 'with no detected URL')}…</p>}
         </CardContent>
       </Card>
 
