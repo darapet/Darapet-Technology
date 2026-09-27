@@ -24,41 +24,129 @@ export type ScoutLead = {
   created_at?: string;
 };
 
+
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
-const URL_RE = /https?:\/\/[^\s<>"')\]]+/i;
+const DOMAIN_RE = /^(?:https?:\/\/)?(?:www\.)?[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}(?::\d+)?(?:\/[^\s]*)?$/i;
 
 function clean(value: unknown) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
 }
 
 function normalizeUrl(value: string) {
-  const url = clean(value).replace(/[.,;:]+$/, '');
-  if (!url) return '';
-  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+  const url = clean(value).replace(/^['"]+|['"]+$/g, '').replace(/[.,;:]+$/, '');
+  if (!url || EMAIL_RE.test(url)) return '';
+  if (!/^https?:\/\//i.test(url) && !/^www\./i.test(url) && !DOMAIN_RE.test(url)) return '';
+  return /^https?:\/\//i.test(url) ? url : 'https://' + url;
 }
 
-function splitLine(line: string) {
-  return line
-    .split(/\t|,|;|\|/)
-    .map(clean)
-    .filter(Boolean);
+function extractWebsite(fields: string[]) {
+  for (const field of fields) {
+    const value = clean(field);
+    if (!value || EMAIL_RE.test(value)) continue;
+    const direct = normalizeUrl(value);
+    if (direct) return direct;
+    const embedded = value.match(/(?:https?:\/\/|www\.)[^\s<>'"]+/i)?.[0] || '';
+    const normalized = normalizeUrl(embedded);
+    if (normalized) return normalized;
+  }
+  return '';
 }
 
-function leadFromLine(line: string, rowNumber: number): Partial<ScoutLead> {
-  const email = line.match(EMAIL_RE)?.[0]?.toLowerCase() || '';
-  const url = line.match(URL_RE)?.[0] || '';
-  const fields = splitLine(line);
-  const nonContactFields = fields.filter(field => !EMAIL_RE.test(field) && !URL_RE.test(field));
+function parseDelimitedLine(line: string, delimiter: string) {
+  const fields: string[] = [];
+  let value = '';
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (character === '"') {
+      if (quoted && line[index + 1] === '"') { value += '"'; index += 1; }
+      else quoted = !quoted;
+    } else if (character === delimiter && !quoted) {
+      fields.push(clean(value));
+      value = '';
+    } else {
+      value += character;
+    }
+  }
+  fields.push(clean(value));
+  return fields;
+}
 
-  return {
-    business_name: nonContactFields[0] || `Imported row ${rowNumber}`,
+function countDelimiter(line: string, delimiter: string) {
+  let count = 0;
+  let quoted = false;
+  for (const character of line) {
+    if (character === '"') quoted = !quoted;
+    else if (character === delimiter && !quoted) count += 1;
+  }
+  return count;
+}
+
+function detectDelimiter(line: string) {
+  return ['\\t', ',', ';', '|'].sort((left, right) => countDelimiter(line, right) - countDelimiter(line, left))[0] || ',';
+}
+
+function headerKey(value: string) {
+  return clean(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+const HEADER_ALIASES = {
+  business: ['businessname', 'company', 'companyname', 'business', 'organization', 'organizationname', 'firm', 'client'],
+  app: ['appname', 'app', 'product', 'productname', 'service'],
+  owner: ['ownername', 'owner', 'contactname', 'contact', 'fullname', 'name'],
+  firstName: ['firstname', 'givenname'],
+  lastName: ['lastname', 'surname', 'familyname'],
+  email: ['email', 'emailaddress', 'emailaddr', 'mail', 'emailid'],
+  website: ['website', 'websiteurl', 'url', 'domain', 'web', 'site', 'homepage'],
+  source: ['sourceurl', 'source', 'sourcewebsite'],
+} as const;
+
+function headerIndex(headers: string[], aliases: readonly string[]) {
+  const normalized = headers.map(headerKey);
+  return normalized.findIndex(header => aliases.includes(header));
+}
+
+function valueAt(fields: string[], headers: string[], aliases: readonly string[]) {
+  const index = headerIndex(headers, aliases);
+  return index >= 0 ? clean(fields[index]) : '';
+}
+
+function hasKnownHeader(headers: string[]) {
+  return Object.values(HEADER_ALIASES).some(aliases => headerIndex(headers, aliases) >= 0);
+}
+
+function leadFromFields(fields: string[], rowNumber: number, sourceFileName?: string) {
+  const email = fields.find(field => EMAIL_RE.test(field))?.match(EMAIL_RE)?.[0]?.toLowerCase() || '';
+  const website = extractWebsite(fields);
+  const nonContactFields = fields.filter(field => !EMAIL_RE.test(field) && !normalizeUrl(field));
+  return emptyLead({
+    business_name: nonContactFields[0] || 'Imported row ' + rowNumber,
     app_name: nonContactFields[1] || '',
     owner_name: nonContactFields[2] || '',
     email,
-    website: normalizeUrl(url),
-    source_url: normalizeUrl(url),
-    source_notes: line,
-  };
+    website,
+    source_url: website,
+    source_notes: fields.join(' | '),
+  }, sourceFileName);
+}
+
+function leadFromHeaderRow(fields: string[], headers: string[], rowNumber: number, sourceFileName?: string) {
+  const record = Object.fromEntries(headers.map((header, index) => [header || 'Column ' + (index + 1), fields[index] || '']));
+  const email = valueAt(fields, headers, HEADER_ALIASES.email).match(EMAIL_RE)?.[0]?.toLowerCase() || fields.find(field => EMAIL_RE.test(field))?.match(EMAIL_RE)?.[0]?.toLowerCase() || '';
+  const website = normalizeUrl(valueAt(fields, headers, HEADER_ALIASES.website)) || extractWebsite(fields);
+  const firstName = valueAt(fields, headers, HEADER_ALIASES.firstName);
+  const lastName = valueAt(fields, headers, HEADER_ALIASES.lastName);
+  const owner = valueAt(fields, headers, HEADER_ALIASES.owner) || [firstName, lastName].filter(Boolean).join(' ');
+  const business = valueAt(fields, headers, HEADER_ALIASES.business) || 'Imported row ' + rowNumber;
+  return emptyLead({
+    business_name: business,
+    app_name: valueAt(fields, headers, HEADER_ALIASES.app),
+    owner_name: owner,
+    email,
+    website,
+    source_url: normalizeUrl(valueAt(fields, headers, HEADER_ALIASES.source)) || website,
+    source_notes: JSON.stringify(record, null, 2),
+  }, sourceFileName);
 }
 
 function emptyLead(partial: Partial<ScoutLead>, sourceFileName?: string): ScoutLead {
@@ -88,40 +176,41 @@ export function parseLeadText(text: string, sourceFileName?: string): ScoutLead[
   const trimmed = text.trim();
   if (!trimmed) return [];
 
-  // JSON exports can contain any fields. Keep the complete row in source_notes
-  // instead of throwing away fields that the lead UI does not understand yet.
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
     try {
       const parsed = JSON.parse(trimmed);
-      const nestedRows = !Array.isArray(parsed) && parsed && typeof parsed === 'object'
-        ? (parsed.leads || parsed.contacts || parsed.data || parsed.rows)
-        : null;
+      const nestedRows = !Array.isArray(parsed) && parsed && typeof parsed === 'object' ? (parsed.leads || parsed.contacts || parsed.data || parsed.rows) : null;
       const rows = Array.isArray(parsed) ? parsed : Array.isArray(nestedRows) ? nestedRows : [parsed];
       if (rows.length) {
         return rows.map((row, index) => {
           const value = row && typeof row === 'object' ? row as Record<string, unknown> : {};
           const email = clean(value.email || value.email_address).toLowerCase();
+          const website = normalizeUrl(clean(value.website || value.url || value.website_url || value.domain));
           return emptyLead({
-            business_name: clean(value.business_name || value.company || value.business || value.name) || `Imported row ${index + 1}`,
-            app_name: clean(value.app_name || value.app),
-            owner_name: clean(value.owner_name || value.owner || value.contact_name),
+            business_name: clean(value.business_name || value.company || value.business || value.name) || 'Imported row ' + (index + 1),
+            app_name: clean(value.app_name || value.app || value.product),
+            owner_name: clean(value.owner_name || value.owner || value.contact_name || value.name),
             email,
-            website: normalizeUrl(clean(value.website || value.url || value.website_url)),
-            source_url: normalizeUrl(clean(value.source_url || value.source)),
+            website,
+            source_url: normalizeUrl(clean(value.source_url || value.source)) || website,
             source_notes: typeof row === 'string' ? row : JSON.stringify(row, null, 2),
           }, sourceFileName);
         });
       }
     } catch {
-      // Fall through to line parsing for malformed or mixed JSON/text.
+      // Fall through to delimited text parsing for malformed or mixed JSON.
     }
   }
 
-  const lines = trimmed.split(/\r?\n/).map(clean).filter(Boolean);
-  const looksLikeHeader = /email|website|company|business|owner|contact|name|phone|address/i.test(lines[0] || '');
-  return lines
-    .slice(looksLikeHeader ? 1 : 0)
-    .map((line, index) => emptyLead(leadFromLine(line, index + 1), sourceFileName));
+  const lines = trimmed.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  if (!lines.length) return [];
+  const delimiter = detectDelimiter(lines[0]);
+  const rows = lines.map(line => parseDelimitedLine(line, delimiter));
+  const headers = rows[0];
+  if (hasKnownHeader(headers)) {
+    return rows.slice(1).filter(row => row.some(Boolean)).map((row, index) => leadFromHeaderRow(row, headers, index + 1, sourceFileName));
+  }
+  return rows.map((row, index) => leadFromFields(row, index + 1, sourceFileName));
 }
 
 export async function extractLeadsFromFile(file: File) {
