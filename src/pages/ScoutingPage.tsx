@@ -151,7 +151,13 @@ export function ScoutingPage() {
       const uploaded = await uploadFileToCloudinary(file, 'darapet/' + user!.id + '/scouting-imports');
       sourceFileUrl = uploaded.secureUrl;
 
-      const imported = await extractLeadsFromFile(file);
+      let imported;
+      try {
+        imported = await extractLeadsFromFile(file);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : 'The file could not be read in the browser.';
+        throw new Error('The original file was uploaded to Cloudinary, but it could not be read: ' + reason);
+      }
       const rows = imported.map(({ id: _id, ...lead }) => ({
         ...lead,
         user_id: user!.id,
@@ -160,12 +166,12 @@ export function ScoutingPage() {
         source_file_size: file.size,
       }));
       const { data, error } = await db.from('scout_leads').insert(rows).select('*');
-      if (error) throw error;
+      if (error) throw new Error('The original file uploaded to Cloudinary, but the lead records could not be saved: ' + error.message);
       setLeads(current => [...((data || []) as ScoutLead[]), ...current]);
       setSelectedIds(new Set((data || []).map((lead: ScoutLead) => lead.id)));
       toast({ title: `${data?.length || imported.length} records saved`, description: 'Every imported record is kept, including records without email addresses.' });
     } catch (error) {
-      toast({ variant: 'destructive', title: 'Import failed', description: error instanceof Error ? error.message : 'Check the file and Cloudinary settings, then try again.' });
+      toast({ variant: 'destructive', title: 'Import failed', description: error instanceof Error ? error.message : 'The file could not be imported. Try again with a CSV, JSON, PDF, or another supported file.' });
     } finally {
       setImporting(false);
       if (fileInput.current) fileInput.current.value = '';
