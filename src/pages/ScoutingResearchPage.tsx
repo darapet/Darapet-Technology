@@ -48,6 +48,7 @@ export function ScoutingResearchPage() {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const targetLeadId = params.get('leadId');
   const targetImportId = params.get('importId');
+  const targetLeadIds = (params.get('leadIds') || '').split(',').map(value => value.trim()).filter(Boolean);
   const [leads, setLeads] = useState<ScoutLead[]>([]);
   const [results, setResults] = useState<Record<string, ResearchSnapshot>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -63,6 +64,7 @@ export function ScoutingResearchPage() {
       const query = db.from('scout_leads').select('*').eq('user_id', user.id).order('created_at', { ascending: true });
       if (targetLeadId) query.eq('id', targetLeadId);
       if (targetImportId) query.eq('import_id', targetImportId);
+      if (targetLeadIds.length) query.in('id', targetLeadIds);
       const [{ data, error }, { data: settings }] = await Promise.all([
         query,
         db.from('settings').select('groq_api_key').eq('id', 1).maybeSingle(),
@@ -75,7 +77,7 @@ export function ScoutingResearchPage() {
       setLoading(false);
     };
     void load();
-  }, [targetImportId, targetLeadId, toast, user]);
+  }, [targetImportId, targetLeadId, targetLeadIds.join(','), toast, user]);
 
   const aiKey = profile?.groq_api_key || groqKey;
   const websiteTargets = useMemo(() => leads.map(lead => {
