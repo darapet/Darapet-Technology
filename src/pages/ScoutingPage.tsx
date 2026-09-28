@@ -61,6 +61,7 @@ export function ScoutingPage() {
   const [readingPdf, setReadingPdf] = useState(false);
   const [savingPdf, setSavingPdf] = useState(false);
   const [pdfError, setPdfError] = useState('');
+  const [importingPdf, setImportingPdf] = useState(false);
   const [personalizing, setPersonalizing] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendProgress, setSendProgress] = useState(0);
@@ -118,6 +119,31 @@ export function ScoutingPage() {
     } catch (error) {
       setPreview([]);
       toast({ variant: 'destructive', title: 'Could not read pasted contacts', description: error instanceof Error ? error.message : 'Use the example format shown below.' });
+    }
+  };
+
+  const importPdf = async (file?: File) => {
+    if (!file) return;
+    if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) {
+      toast({ variant: 'destructive', title: 'Please choose a PDF', description: 'Only PDF files can be imported into Scouting.' });
+      return;
+    }
+    setImportingPdf(true);
+    setReadingPdf(true);
+    setPdfError('');
+    setPdfPreview([]);
+    try {
+      const parsed = await extractLeadsFromFile(file);
+      const usable = parsed.filter(lead => Object.keys(lead.raw_data || {}).length > 0 && lead.business_name !== file.name);
+      if (!usable.length) throw new Error('No separate contact rows were found. Make sure the PDF contains selectable text and a contact table.');
+      setHostedPdf({ name: file.name, url: '', size: file.size });
+      setPdfPreview(usable);
+      toast({ title: usable.length + ' PDF contacts found', description: 'Review the preview, then save these contacts.' });
+    } catch (error) {
+      setPdfError(error instanceof Error ? error.message : 'The PDF could not be read.');
+    } finally {
+      setImportingPdf(false);
+      setReadingPdf(false);
     }
   };
 
@@ -419,12 +445,13 @@ export function ScoutingPage() {
       </div>
 
       <Card className="border-primary/20 bg-primary/[0.03]">
-        <CardHeader><CardTitle>Read the PDF already stored on your website</CardTitle><p className="text-sm text-muted-foreground">Scouting automatically reads the latest PDF in your existing Asset Library. There is no upload step here.</p></CardHeader>
+        <CardHeader><CardTitle>Import or read a lead PDF</CardTitle><p className="text-sm text-muted-foreground">Choose a PDF from your device, or read the latest PDF already stored in your website Asset Library.</p></CardHeader>
         <CardContent className="space-y-4">
+          <div className="rounded-lg border bg-background p-3 space-y-2"><p className="text-sm font-semibold">Import a PDF</p><Input type="file" accept="application/pdf,.pdf" onChange={event => void importPdf(event.target.files?.[0])} disabled={importingPdf || readingPdf || savingPdf} className="cursor-pointer" /><p className="text-xs text-muted-foreground">PDFs with selectable text work best. The file is read into separate contacts before anything is saved.</p></div>
           {readingPdf && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Reading the stored PDF and separating its contacts…</div>}
           {pdfError && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{pdfError}</div>}
           {hostedPdf && <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border bg-background p-3"><div><p className="font-semibold">{hostedPdf.name}</p><p className="text-xs text-muted-foreground mt-1">{pdfPreview.length ? pdfPreview.length + ' separate contacts recognized' : 'Stored PDF source'}</p></div><Button variant="outline" size="sm" onClick={() => void loadHostedPdf()} disabled={readingPdf || savingPdf}><Search className="w-4 h-4 mr-2" /> Read again</Button></div>}
-          {pdfPreview.length > 0 && <div className="rounded-lg border bg-background p-3 space-y-3"><div className="flex items-center justify-between"><p className="font-semibold">PDF preview: {pdfPreview.length} contacts</p><Badge variant="outline">Ready to save</Badge></div><div className="max-h-56 overflow-auto space-y-1">{pdfPreview.slice(0, 8).map((lead, index) => <div key={lead.id} className="flex items-center gap-2 text-sm"><span className="text-muted-foreground w-5">{index + 1}.</span><span className="font-medium truncate">{lead.business_name}</span><span className="text-muted-foreground truncate">{extractLeadEmails(lead).join(', ') || 'No email'}</span><span className="text-muted-foreground truncate">{lead.website || 'No website'}</span></div>)}{pdfPreview.length > 8 && <p className="text-xs text-muted-foreground">+ {pdfPreview.length - 8} more contacts</p>}</div><Button onClick={savePdfLeads} disabled={savingPdf || readingPdf}>{savingPdf ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />} Save PDF contacts</Button></div>}
+          {pdfPreview.length > 0 && <div className="rounded-lg border bg-background p-3 space-y-3"><div className="flex items-center justify-between"><p className="font-semibold">PDF preview: {pdfPreview.length} contacts</p><Badge variant="outline">Ready to save</Badge></div><div className="max-h-56 overflow-auto space-y-1">{pdfPreview.slice(0, 8).map((lead, index) => <div key={lead.id} className="flex items-center gap-2 text-sm"><span className="text-muted-foreground w-5">{index + 1}.</span><span className="font-medium truncate">{lead.business_name}</span><span className="text-muted-foreground truncate">{extractLeadEmails(lead).join(', ') || 'No email'}</span><span className="text-muted-foreground truncate">{lead.website || 'No website'}</span></div>)}{pdfPreview.length > 8 && <p className="text-xs text-muted-foreground">+ {pdfPreview.length - 8} more contacts</p>}</div><Button onClick={savePdfLeads} disabled={savingPdf || readingPdf || importingPdf}>{savingPdf ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />} Save PDF contacts</Button></div>}
         </CardContent>
       </Card>
 
