@@ -8,7 +8,7 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { hasUsableEmailProvider, sendEmail } from '@/lib/emailSend';
 import { disconnectGmail, getGmailStatus, sendGmail, startGmailConnection, type GmailStatus } from '@/lib/gmail';
-import { extractLeadEmails, extractLeadsFromFile, parseAiJson, parsePastedLeads, toHtmlEmail, type ResearchSnapshot, type ScoutLead } from '@/lib/scouting';
+import { extractLeadEmails, extractLeadsFromFile, toHtmlEmail, type ResearchSnapshot, type ScoutLead } from '@/lib/scouting';
 import { EMAIL_TEMPLATES } from '@/pages/email/emailTemplates';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
@@ -53,15 +53,6 @@ export function ScoutingPage() {
   const { toast } = useToast();
   const [leads, setLeads] = useState<ScoutLead[]>([]);
   const [loading, setLoading] = useState(true);
-  const [pasteText, setPasteText] = useState('');
-  const [preview, setPreview] = useState<ScoutLead[]>([]);
-  const [savingPaste, setSavingPaste] = useState(false);
-  const [hostedPdf, setHostedPdf] = useState<{ name: string; url: string; size: number } | null>(null);
-  const [pdfPreview, setPdfPreview] = useState<ScoutLead[]>([]);
-  const [readingPdf, setReadingPdf] = useState(false);
-  const [savingPdf, setSavingPdf] = useState(false);
-  const [pdfError, setPdfError] = useState('');
-  const [importingPdf, setImportingPdf] = useState(false);
   const [personalizing, setPersonalizing] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendProgress, setSendProgress] = useState(0);
@@ -69,29 +60,51 @@ export function ScoutingPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [personalizationPrompt, setPersonalizationPrompt] = useState('');
-  const [showPersonalizationPrompt, setShowPersonalizationPrompt] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState((EMAIL_TEMPLATES as any[])[0]?.id || '');
   const [gmailStatus, setGmailStatus] = useState<GmailStatus>({ connected: false, email: null, connectedAt: null });
   const [gmailLoading, setGmailLoading] = useState(true);
   const [gmailAction, setGmailAction] = useState(false);
   const [gmailError, setGmailError] = useState('');
-  const [groqKey, setGroqKey] = useState('');
-
   useEffect(() => {
     if (!user) return;
     const load = async () => {
-      const [{ data, error }, { data: settings }] = await Promise.all([
-        db.from('scout_leads').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-        db.from('settings').select('groq_api_key').eq('id', 1).maybeSingle(),
-      ]);
+      const { data, error } = await db.from('scout_leads').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
       if (error) toast({ variant: 'destructive', title: 'Could not load scouting contacts', description: error.message });
-      setLeads((data || []) as ScoutLead[]);
-      setGroqKey(settings?.groq_api_key || '');
+      let loaded = (data || []) as ScoutLead[];
+      try {
+        const { data: asset } = await db.from('user_assets')
+          .select('name, original_filename, size_bytes, cloudinary_url')
+          .eq('user_id', user.id)
+          .eq('asset_type', 'pdf')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (asset?.cloudinary_url && !loaded.some(lead => lead.source_file_path === asset.cloudinary_url)) {
+          const response = await fetch(asset.cloudinary_url);
+          if (response.ok) {
+            const blob = await response.blob();
+            const file = new File([blob], asset.original_filename || asset.name || 'scouting-leads.pdf', { type: 'application/pdf' });
+            const parsed = await extractLeadsFromFile(file);
+            const usable = parsed.filter(lead => Object.keys(lead.raw_data || {}).length > 0 && lead.business_name !== file.name);
+            if (usable.length) {
+              const rows = usable.map(lead => ({ ...lead, user_id: user.id, source_file_name: file.name, source_file_path: asset.cloudinary_url, source_file_type: 'application/pdf', source_file_size: Number(asset.size_bytes || file.size) }));
+              const { data: imported, error: importError } = await db.from('scout_leads').insert(rows).select('*');
+              if (!importError && imported?.length) {
+                loaded = [...(imported as ScoutLead[]), ...loaded];
+                toast({ title: imported.length + ' contacts synced from your stored PDF', description: 'They are ready for OpenAI research and drafting.' });
+              }
+            }
+          }
+        }
+      } catch (error) {
+        toast({ variant: 'destructive', title: 'Stored PDF sync skipped', description: error instanceof Error ? error.message : 'The existing leads were still loaded.' });
+      }
+      setLeads(loaded);
+      setSelectedIds(new Set(loaded.map(lead => lead.id)));
       setLoading(false);
     };
     void load();
   }, [toast, user]);
-
   useEffect(() => {
     if (!user) return;
     getGmailStatus()
@@ -110,208 +123,66 @@ export function ScoutingPage() {
     if (error) toast({ variant: 'destructive', title: 'Could not save contact', description: error.message });
   };
 
-  const previewPasted = () => {
-    try {
-      const parsed = parsePastedLeads(pasteText);
-      if (!parsed.length) throw new Error('No contacts were recognized. Paste a JSON array, CSV/TSV table, or Markdown table with a business, website, and email column.');
-      setPreview(parsed);
-      toast({ title: parsed.length + ' contacts recognized', description: 'Review the rows below, then save them to scouting.' });
-    } catch (error) {
-      setPreview([]);
-      toast({ variant: 'destructive', title: 'Could not read pasted contacts', description: error instanceof Error ? error.message : 'Use the example format shown below.' });
-    }
-  };
-
-  const importPdf = async (file?: File) => {
-    if (!file) return;
-    if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) {
-      toast({ variant: 'destructive', title: 'Please choose a PDF', description: 'Only PDF files can be imported into Scouting.' });
-      return;
-    }
-    setImportingPdf(true);
-    setReadingPdf(true);
-    setPdfError('');
-    setPdfPreview([]);
-    try {
-      const parsed = await extractLeadsFromFile(file);
-      const usable = parsed.filter(lead => Object.keys(lead.raw_data || {}).length > 0 && lead.business_name !== file.name);
-      if (!usable.length) throw new Error('No separate contact rows were found. Make sure the PDF contains selectable text and a contact table.');
-      setHostedPdf({ name: file.name, url: '', size: file.size });
-      setPdfPreview(usable);
-      toast({ title: usable.length + ' PDF contacts found', description: 'Review the preview, then save these contacts.' });
-    } catch (error) {
-      setPdfError(error instanceof Error ? error.message : 'The PDF could not be read.');
-    } finally {
-      setImportingPdf(false);
-      setReadingPdf(false);
-    }
-  };
-
-  const loadHostedPdf = async () => {
-    if (!user) return;
-    setReadingPdf(true);
-    setPdfError('');
-    try {
-      const { data: asset, error: assetError } = await db.from('user_assets')
-        .select('name, original_filename, asset_type, mime_type, size_bytes, cloudinary_url')
-        .eq('user_id', user.id)
-        .eq('asset_type', 'pdf')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (assetError) throw new Error(assetError.message);
-      if (!asset?.cloudinary_url) {
-        setHostedPdf(null);
-        setPdfPreview([]);
-        setPdfError('No PDF is stored in your website Asset Library yet.');
-        return;
-      }
-      const response = await fetch(asset.cloudinary_url);
-      if (!response.ok) throw new Error('The stored PDF could not be opened from the Asset Library.');
-      const blob = await response.blob();
-      const file = new File([blob], asset.original_filename || asset.name || 'scouting-leads.pdf', { type: 'application/pdf' });
-      const parsed = await extractLeadsFromFile(file);
-      const usable = parsed.filter(lead => Object.keys(lead.raw_data || {}).length > 0 && lead.business_name !== file.name);
-      if (!usable.length) throw new Error('The stored PDF opened, but no separate contact rows were found.');
-      setHostedPdf({ name: asset.original_filename || asset.name || 'scouting-leads.pdf', url: asset.cloudinary_url, size: Number(asset.size_bytes || file.size) });
-      setPdfPreview(usable);
-      toast({ title: usable.length + ' contacts read from your stored PDF', description: 'Each contact is ready for individual AI personalization.' });
-    } catch (error) {
-      setHostedPdf(null);
-      setPdfPreview([]);
-      setPdfError(error instanceof Error ? error.message : 'The stored PDF could not be read.');
-    } finally {
-      setReadingPdf(false);
-    }
-  };
-
-  const savePdfLeads = async () => {
-    if (!hostedPdf || !pdfPreview.length) return;
-    setSavingPdf(true);
-    try {
-      const rows = pdfPreview.map(lead => ({
-        ...lead,
-        user_id: user!.id,
-        source_file_name: hostedPdf.name,
-        source_file_path: hostedPdf.url,
-        source_file_type: 'application/pdf',
-        source_file_size: hostedPdf.size,
-      }));
-      const { data, error } = await db.from('scout_leads').insert(rows).select('*');
-      if (error) throw new Error(error.message);
-      const saved = (data || []) as ScoutLead[];
-      setLeads(current => [...saved, ...current]);
-      setSelectedIds(new Set(saved.map(lead => lead.id)));
-      setShowPersonalizationPrompt(true);
-      setPdfPreview([]);
-      toast({ title: saved.length + ' PDF contacts saved', description: 'The personalization prompt is ready for these contacts.' });
-    } catch (error) {
-      toast({ variant: 'destructive', title: 'Could not save PDF contacts', description: error instanceof Error ? error.message : 'Try reading the stored PDF again.' });
-    } finally {
-      setSavingPdf(false);
-    }
-  };
-
-  useEffect(() => {
-    if (user) void loadHostedPdf();
-  }, [user]);
-
-  const savePasted = async () => {
-    const parsed = preview.length ? preview : parsePastedLeads(pasteText);
-    if (!parsed.length) {
-      previewPasted();
-      return;
-    }
-    setSavingPaste(true);
-    try {
-      const rows = parsed.map(lead => ({ ...lead, user_id: user!.id }));
-      const { data, error } = await db.from('scout_leads').insert(rows).select('*');
-      if (error) throw new Error(error.message);
-      const saved = (data || []) as ScoutLead[];
-      setLeads(current => [...saved, ...current]);
-      setSelectedIds(new Set(saved.map(lead => lead.id)));
-      setPasteText('');
-      setPreview([]);
-      toast({ title: saved.length + ' contacts saved', description: 'Each row is ready to personalize separately.' });
-    } catch (error) {
-      toast({ variant: 'destructive', title: 'Could not save contacts', description: error instanceof Error ? error.message : 'Try pasting the data again.' });
-    } finally {
-      setSavingPaste(false);
-    }
-  };
-
-  const aiKey = profile?.groq_api_key || groqKey;
-
-  const callGroq = async <T,>(prompt: string): Promise<T> => {
-    if (!aiKey) throw new Error('Add a Groq API key in Admin Settings before personalizing contacts.');
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + aiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages: [
-          { role: 'system', content: 'Return only valid JSON. Use only the supplied contact data. Do not browse, invent facts, or mix one contact with another.' },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.35,
-        max_tokens: 700,
-      }),
+  const callOpenAiAgent = async (lead: ScoutLead, recipientEmail: string) => {
+    const { data, error } = await supabase.functions.invoke('openai-scouting-agent', {
+      body: {
+        lead,
+        recipientEmail,
+        senderName: profile?.company || profile?.name || 'Darapet Technology',
+      },
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data?.error?.message || 'AI personalization failed.');
-    const parsed = parseAiJson<T>(data.choices?.[0]?.message?.content || '');
-    if (!parsed) throw new Error('The AI returned an unreadable response. Try again.');
-    return parsed;
+    if (error) throw new Error(error.message || 'The OpenAI scouting agent failed.');
+    if (!data?.subject || !data?.body) throw new Error(data?.error || 'The OpenAI scouting agent returned no draft.');
+    return data as { subject: string; body: string; research?: Partial<ResearchSnapshot>; searched?: boolean };
   };
 
   const personalizeLead = async (lead: ScoutLead) => {
-    const research = storedResearch(lead);
     const recipientEmails = extractLeadEmails(lead);
-    if (!research || !recipientEmails.length) return;
-    const drafts = await Promise.all(recipientEmails.map(async recipientEmail => {
-      const result = await callGroq<PersonalizationResponse>(
-        'Write one distinct, respectful outreach email for exactly this contact.\n' +
-        'Personalization instruction: ' + personalizationPrompt + '\n' +
-        'Contact ID: ' + lead.id + '\n' +
-        'Recipient email: ' + recipientEmail + '\n' +
-        'Business: ' + lead.business_name + '\n' +
-        'Owner/contact: ' + (lead.owner_name || 'not provided') + '\n' +
-        'Website: ' + (lead.website || 'not provided') + '\n' +
-        'Website name: ' + (research.websiteName || 'not provided') + '\n' +
-        'Description: ' + (research.description || 'not provided') + '\n' +
-        'Merits: ' + research.merits.join('; ') + '\n' +
-        'Demerits: ' + research.demerits.join('; ') + '\n' +
-        'Area of concentration: ' + (research.concentration || 'not provided') + '\n' +
-        'Areas for improvement: ' + research.improvements.join('; ') + '\n' +
-        'Public contact hints: ' + research.contactHints.join('; ') + '\n' +
-        'All pasted fields for this contact: ' + JSON.stringify(lead.raw_data || {}) + '\n' +
-        'Sender: ' + (profile?.company || profile?.name || 'a freelance technology partner') + '\n' +
-        'Return JSON exactly as {"subject":"...","body":"..."}. The body must be plain text, under 180 words, specific to this contact, and end with an unsubscribe sentence.'
-      );
-      return { recipientEmail, subject: result.subject || ('A quick idea for ' + lead.business_name), body: result.body || '' };
-    }));
+    if (!recipientEmails.length) return;
+    const drafts = [] as Array<{ recipientEmail: string; subject: string; body: string }>;
+    let latestResearch: ResearchSnapshot | null = null;
+    for (const recipientEmail of recipientEmails) {
+      const result = await callOpenAiAgent(lead, recipientEmail);
+      drafts.push({ recipientEmail, subject: result.subject, body: result.body });
+      if (result.research) {
+        latestResearch = {
+          leadId: lead.id,
+          website: lead.website || '',
+          status: 'complete',
+          success: true,
+          httpStatus: null,
+          statusText: result.searched ? 'OpenAI web research completed' : 'OpenAI draft based on saved lead data',
+          websiteName: result.research.websiteName || lead.business_name,
+          description: result.research.description || '',
+          ownerName: lead.owner_name || '',
+          merits: Array.isArray(result.research.merits) ? result.research.merits : [],
+          demerits: Array.isArray(result.research.demerits) ? result.research.demerits : [],
+          concentration: result.research.concentration || '',
+          improvements: Array.isArray(result.research.improvements) ? result.research.improvements : [],
+          contactHints: Array.isArray(result.research.contactHints) ? result.research.contactHints : [],
+          analyzedAt: new Date().toISOString(),
+        };
+      }
+    }
     const first = drafts[0];
     await saveLead(lead.id, {
       email_drafts: drafts,
       personalization_status: 'generated',
       email_subject: first?.subject || '',
       email_body: first?.body || '',
+      research_status: 'researched',
+      research_data: latestResearch || storedResearch(lead),
+      research_summary: latestResearch?.description || latestResearch?.websiteName || 'OpenAI research completed',
+      pain_points: latestResearch?.demerits || [],
     });
   };
 
-  const openPersonalizePrompt = () => {
-    const targets = activeLeads.filter(lead => selectedIds.has(lead.id) && !lead.opted_out && storedResearch(lead) && extractLeadEmails(lead).length);
+  const personalizeSelected = async () => {
+    const targets = activeLeads.filter(lead => selectedIds.has(lead.id) && !lead.opted_out && extractLeadEmails(lead).length);
     if (!targets.length) {
-      toast({ variant: 'destructive', title: 'Select contacts with email addresses', description: 'Every pasted row with an email is personalized separately.' });
+      toast({ variant: 'destructive', title: 'No contacts with email addresses selected', description: 'Select at least one saved lead with a recipient email.' });
       return;
     }
-    setShowPersonalizationPrompt(true);
-  };
-
-  const personalizeSelected = async () => {
-    const targets = activeLeads.filter(lead => selectedIds.has(lead.id) && !lead.opted_out && storedResearch(lead) && extractLeadEmails(lead).length);
-    if (!targets.length) return;
-    setShowPersonalizationPrompt(false);
     setPersonalizing(true);
     let completed = 0;
     try {
@@ -319,13 +190,19 @@ export function ScoutingPage() {
         await personalizeLead(lead);
         completed += 1;
       }
-      toast({ title: completed + ' personalized drafts ready', description: 'Review each draft before sending.' });
+      toast({ title: completed + ' personalized drafts ready', description: 'Choose a design, review the messages, then send.' });
     } catch (error) {
-      toast({ variant: 'destructive', title: 'Personalization stopped', description: error instanceof Error ? error.message : 'Try the remaining contacts again.' });
+      toast({ variant: 'destructive', title: 'OpenAI personalization stopped', description: error instanceof Error ? error.message : 'Check the OpenAI connection and try again.' });
     } finally {
       setPersonalizing(false);
     }
   };
+
+  useEffect(() => {
+    if (loading || !leads.length || personalizing) return;
+    const needsDrafts = leads.some(lead => !lead.opted_out && !lead.email_drafts?.length && extractLeadEmails(lead).length);
+    if (needsDrafts) void personalizeSelected();
+  }, [loading]);
 
   const connectGmail = async () => {
     setGmailAction(true);
@@ -342,7 +219,7 @@ export function ScoutingPage() {
   };
 
   const renderLeadEmail = (lead: ScoutLead) => {
-    const template = (EMAIL_TEMPLATES as any[])[0];
+    const template = (EMAIL_TEMPLATES as any[]).find(item => item.id === selectedTemplateId) || (EMAIL_TEMPLATES as any[])[0];
     if (!template?.renderHTML) return '<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">' + toHtmlEmail(lead.email_body) + '</div>';
     return template.renderHTML({
       brandName: profile?.company || profile?.name || 'Darapet Technology',
@@ -385,7 +262,7 @@ export function ScoutingPage() {
     setSendProgress(0);
     const { data: campaign } = await db.from('campaigns').insert({
       user_id: user!.id,
-      subject: 'Scouting outreach',
+      subject: ((EMAIL_TEMPLATES as any[]).find(item => item.id === selectedTemplateId)?.name || 'Scouting outreach'),
       body: 'Individualized scouting messages from pasted contacts',
       recipients: targets.map(target => target.draft.recipientEmail),
       status: 'sending',
@@ -438,41 +315,18 @@ export function ScoutingPage() {
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-primary text-sm font-semibold mb-2"><Megaphone className="w-4 h-4" /> Scouting workspace</div>
-          <h1 className="text-3xl font-bold tracking-tight">Paste leads, personalize, send</h1>
-          <p className="text-muted-foreground mt-2 max-w-2xl">The app reads the latest PDF already stored in your website Asset Library, or you can paste the same data from ChatGPT. The app keeps each contact separate, then personalizes from that contact's own website, owner, merits, and demerits.</p>
+          <h1 className="text-3xl font-bold tracking-tight">AI research, choose a design, send</h1>
+          <p className="text-muted-foreground mt-2 max-w-2xl">ChatGPT researches each saved lead separately and prepares an individual draft. Choose your email design, review the messages, and send.</p>
         </div>
         <Link href="/campaigns/history"><Button variant="outline" className="gap-2"><Mail className="w-4 h-4" /> Campaign history</Button></Link>
       </div>
-
-      <Card className="border-primary/20 bg-primary/[0.03]">
-        <CardHeader><CardTitle>Import or read a lead PDF</CardTitle><p className="text-sm text-muted-foreground">Choose a PDF from your device, or read the latest PDF already stored in your website Asset Library.</p></CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-lg border bg-background p-3 space-y-2"><p className="text-sm font-semibold">Import a PDF</p><Input type="file" accept="application/pdf,.pdf" onChange={event => void importPdf(event.target.files?.[0])} disabled={importingPdf || readingPdf || savingPdf} className="cursor-pointer" /><p className="text-xs text-muted-foreground">PDFs with selectable text work best. The file is read into separate contacts before anything is saved.</p></div>
-          {readingPdf && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Reading the stored PDF and separating its contacts…</div>}
-          {pdfError && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{pdfError}</div>}
-          {hostedPdf && <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border bg-background p-3"><div><p className="font-semibold">{hostedPdf.name}</p><p className="text-xs text-muted-foreground mt-1">{pdfPreview.length ? pdfPreview.length + ' separate contacts recognized' : 'Stored PDF source'}</p></div><Button variant="outline" size="sm" onClick={() => void loadHostedPdf()} disabled={readingPdf || savingPdf}><Search className="w-4 h-4 mr-2" /> Read again</Button></div>}
-          {pdfPreview.length > 0 && <div className="rounded-lg border bg-background p-3 space-y-3"><div className="flex items-center justify-between"><p className="font-semibold">PDF preview: {pdfPreview.length} contacts</p><Badge variant="outline">Ready to save</Badge></div><div className="max-h-56 overflow-auto space-y-1">{pdfPreview.slice(0, 8).map((lead, index) => <div key={lead.id} className="flex items-center gap-2 text-sm"><span className="text-muted-foreground w-5">{index + 1}.</span><span className="font-medium truncate">{lead.business_name}</span><span className="text-muted-foreground truncate">{extractLeadEmails(lead).join(', ') || 'No email'}</span><span className="text-muted-foreground truncate">{lead.website || 'No website'}</span></div>)}{pdfPreview.length > 8 && <p className="text-xs text-muted-foreground">+ {pdfPreview.length - 8} more contacts</p>}</div><Button onClick={savePdfLeads} disabled={savingPdf || readingPdf || importingPdf}>{savingPdf ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />} Save PDF contacts</Button></div>}
-        </CardContent>
-      </Card>
-
-      <Card className="border-primary/20 bg-primary/[0.03]">
-        <CardHeader><CardTitle>Paste contacts from ChatGPT</CardTitle><p className="text-sm text-muted-foreground">Paste 1 contact or 50+. JSON arrays and Markdown tables work best. Every row becomes a separate contact.</p></CardHeader>
-        <CardContent className="space-y-4">
-          <Textarea value={pasteText} onChange={event => { setPasteText(event.target.value); setPreview([]); }} placeholder={'Paste ChatGPT output here, for example:\n[{"business":"Example Co","website":"https://example.com","owner_name":"Jane Doe","owner_email":"jane@example.com","merits":["Clear offer"],"demerits":["Weak call to action"],"improvements":["Add a stronger CTA"]}]'} className="min-h-48 font-mono text-sm" />
-          <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={previewPasted} disabled={!pasteText.trim() || savingPaste}><Search className="w-4 h-4 mr-2" /> Preview contacts</Button><Button onClick={savePasted} disabled={!pasteText.trim() || savingPaste}>{savingPaste ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />} Save contacts</Button></div>
-          <details className="rounded-lg border bg-background p-3 text-sm"><summary className="cursor-pointer font-medium">What fields can I paste?</summary><p className="text-muted-foreground mt-2">Business, website, website name, owner name, owner email, developer email, description, merits, demerits, concentration, improvements, contact hints, and any other fields. All unrecognized fields are preserved and sent to the AI for that same contact.</p></details>
-          {preview.length > 0 && <div className="rounded-lg border bg-background p-3 space-y-2"><div className="flex items-center justify-between"><p className="font-semibold">Preview: {preview.length} contacts</p><Badge variant="outline">Ready to save</Badge></div><div className="max-h-56 overflow-auto space-y-1">{preview.slice(0, 8).map((lead, index) => <div key={lead.id} className="flex items-center gap-2 text-sm"><span className="text-muted-foreground w-5">{index + 1}.</span><span className="font-medium truncate">{lead.business_name}</span><span className="text-muted-foreground truncate">{lead.email || 'No email'}</span><span className="text-muted-foreground truncate">{lead.website || 'No website'}</span></div>)}{preview.length > 8 && <p className="text-xs text-muted-foreground">+ {preview.length - 8} more contacts</p>}</div></div>}
-        </CardContent>
-      </Card>
 
       <Card className={gmailStatus.connected ? 'border-green-200 bg-green-500/[0.03]' : 'border-primary/20 bg-primary/[0.03]'}>
         <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div className="flex items-start gap-3"><div className={'w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ' + (gmailStatus.connected ? 'bg-green-500/10 text-green-600' : 'bg-primary/10 text-primary')}><Mail className="w-5 h-5" /></div><div><p className="font-semibold flex items-center gap-2">Send from Gmail {gmailStatus.connected && <Badge variant="outline" className="text-green-600 border-green-200">Connected</Badge>}</p>{gmailLoading ? <p className="text-sm text-muted-foreground mt-1">Checking connection…</p> : gmailStatus.connected ? <p className="text-sm text-muted-foreground mt-1">{gmailStatus.email} will be used for reviewed scouting sends.</p> : <p className="text-sm text-muted-foreground mt-1">Connect a mailbox so messages send from your Gmail account.</p>}{gmailError && <p className="text-xs text-amber-600 mt-1">{gmailError}</p>}</div></div>{gmailStatus.connected ? <Button variant="outline" size="sm" onClick={disconnectConnectedGmail} disabled={gmailAction}>{gmailAction ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />} Disconnect</Button> : <Button size="sm" onClick={connectGmail} disabled={gmailAction || gmailLoading}>{gmailAction ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />} Connect Gmail</Button>}</CardContent>
       </Card>
 
-      {showPersonalizationPrompt && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true"><Card className="w-full max-w-2xl shadow-xl"><CardHeader><CardTitle>What should the AI personalize?</CardTitle><p className="text-sm text-muted-foreground">This instruction is applied independently to every selected contact. The AI will use only that row's pasted data.</p></CardHeader><CardContent className="space-y-4"><Textarea autoFocus value={personalizationPrompt} onChange={event => setPersonalizationPrompt(event.target.value)} placeholder="Example: Offer a short website improvement audit and mention one concrete way I can help them convert more visitors. Keep the tone warm and direct." className="min-h-32" /><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setShowPersonalizationPrompt(false)}>Cancel</Button><Button onClick={personalizeSelected} disabled={personalizing}>{personalizing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />} Generate drafts</Button></div></CardContent></Card></div>}
-
       <Card>
-        <CardHeader className="pb-3"><div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3"><div><CardTitle className="text-base">Saved contacts</CardTitle><p className="text-sm text-muted-foreground mt-1">Select contacts, personalize them as a batch, review each draft, then send.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={openPersonalizePrompt} disabled={personalizing || sending || !selectedIds.size} className="gap-1.5">{personalizing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />} Personalize selected</Button><Button size="sm" onClick={sendSelected} disabled={sending || personalizing || !selectedIds.size} className="gap-1.5">{sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Send reviewed</Button></div></div>{sending && <Progress value={sendProgress} className="mt-3" />}</CardHeader>
+        <CardHeader className="pb-3"><div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3"><div><CardTitle className="text-base">Saved contacts</CardTitle><p className="text-sm text-muted-foreground mt-1">Select contacts, personalize them as a batch, review each draft, then send.</p></div><div className="flex flex-wrap gap-2">{personalizing && <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground"><Loader2 className="w-3.5 h-3.5 animate-spin" /> ChatGPT is researching and drafting…</span>}<select value={selectedTemplateId} onChange={event => setSelectedTemplateId(event.target.value)} className="h-9 rounded-md border border-input bg-background px-2 text-sm" aria-label="Choose email design">{(EMAIL_TEMPLATES as any[]).map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select><Button size="sm" onClick={sendSelected} disabled={sending || personalizing || !selectedIds.size} className="gap-1.5">{sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Send reviewed</Button></div></div>{sending && <Progress value={sendProgress} className="mt-3" />}</CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3"><div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total</p><p className="text-2xl font-bold mt-1">{stats.total}</p></div><div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Ready</p><p className="text-2xl font-bold mt-1">{stats.ready}</p></div><div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Drafts</p><p className="text-2xl font-bold mt-1">{stats.drafts}</p></div><div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Sent</p><p className="text-2xl font-bold mt-1">{stats.sent}</p></div></div>
           <div className="flex flex-col sm:flex-row gap-2"><div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input value={filter} onChange={event => setFilter(event.target.value)} placeholder="Search business, owner, email, website, or any pasted field" className="pl-9" /></div><select value={statusFilter} onChange={event => setStatusFilter(event.target.value as StatusFilter)} className="h-10 rounded-md border border-input bg-background px-3 text-sm"><option value="all">All contacts</option><option value="ready">Ready</option><option value="drafted">Draft ready</option><option value="sent">Sent</option><option value="opted_out">Opted out</option></select></div>
@@ -488,7 +342,7 @@ export function ScoutingPage() {
           })}</div>}
         </CardContent>
       </Card>
-      <div className="flex items-start gap-2 text-xs text-muted-foreground max-w-3xl"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /><p>The app does not fetch or mix website data. It reads the rows from your stored PDF or pasted data, keeps each contact separate, and only sends after you review the individual drafts.</p></div>
+      <div className="flex items-start gap-2 text-xs text-muted-foreground max-w-3xl"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /><p>ChatGPT researches each saved lead separately. No contact data is mixed, and nothing is sent until you review the individual drafts.</p></div>
     </div>
   );
 }
