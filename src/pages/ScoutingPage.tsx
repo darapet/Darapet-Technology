@@ -56,10 +56,11 @@ export function ScoutingPage() {
   const [pasteText, setPasteText] = useState('');
   const [preview, setPreview] = useState<ScoutLead[]>([]);
   const [savingPaste, setSavingPaste] = useState(false);
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [hostedPdf, setHostedPdf] = useState<{ name: string; url: string; size: number } | null>(null);
   const [pdfPreview, setPdfPreview] = useState<ScoutLead[]>([]);
   const [readingPdf, setReadingPdf] = useState(false);
   const [savingPdf, setSavingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState('');
   const [personalizing, setPersonalizing] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendProgress, setSendProgress] = useState(0);
@@ -120,40 +121,55 @@ export function ScoutingPage() {
     }
   };
 
-  const readPdf = async (file?: File) => {
-    if (!file) return;
-    if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) {
-      toast({ variant: 'destructive', title: 'Please choose a PDF', description: 'The scouting PDF reader accepts .pdf files only.' });
-      return;
-    }
+  const loadHostedPdf = async () => {
+    if (!user) return;
     setReadingPdf(true);
-    setPdfFile(file);
-    setPdfPreview([]);
+    setPdfError('');
     try {
+      const { data: asset, error: assetError } = await db.from('user_assets')
+        .select('name, original_filename, asset_type, mime_type, size_bytes, cloudinary_url')
+        .eq('user_id', user.id)
+        .eq('asset_type', 'pdf')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (assetError) throw new Error(assetError.message);
+      if (!asset?.cloudinary_url) {
+        setHostedPdf(null);
+        setPdfPreview([]);
+        setPdfError('No PDF is stored in your website Asset Library yet.');
+        return;
+      }
+      const response = await fetch(asset.cloudinary_url);
+      if (!response.ok) throw new Error('The stored PDF could not be opened from the Asset Library.');
+      const blob = await response.blob();
+      const file = new File([blob], asset.original_filename || asset.name || 'scouting-leads.pdf', { type: 'application/pdf' });
       const parsed = await extractLeadsFromFile(file);
       const usable = parsed.filter(lead => Object.keys(lead.raw_data || {}).length > 0 && lead.business_name !== file.name);
-      if (!usable.length) throw new Error('No separate contact rows were found. Make sure the PDF contains selectable text and a table with business, website, email, or contact columns.');
+      if (!usable.length) throw new Error('The stored PDF opened, but no separate contact rows were found.');
+      setHostedPdf({ name: asset.original_filename || asset.name || 'scouting-leads.pdf', url: asset.cloudinary_url, size: Number(asset.size_bytes || file.size) });
       setPdfPreview(usable);
-      toast({ title: usable.length + ' PDF contacts recognized', description: 'Each row is ready to save and personalize separately.' });
+      toast({ title: usable.length + ' contacts read from your stored PDF', description: 'Each contact is ready for individual AI personalization.' });
     } catch (error) {
-      setPdfFile(null);
+      setHostedPdf(null);
       setPdfPreview([]);
-      toast({ variant: 'destructive', title: 'Could not read this PDF', description: error instanceof Error ? error.message : 'Try a PDF with selectable text.' });
+      setPdfError(error instanceof Error ? error.message : 'The stored PDF could not be read.');
     } finally {
       setReadingPdf(false);
     }
   };
 
   const savePdfLeads = async () => {
-    if (!pdfFile || !pdfPreview.length) return;
+    if (!hostedPdf || !pdfPreview.length) return;
     setSavingPdf(true);
     try {
       const rows = pdfPreview.map(lead => ({
         ...lead,
         user_id: user!.id,
-        source_file_name: pdfFile.name,
+        source_file_name: hostedPdf.name,
+        source_file_path: hostedPdf.url,
         source_file_type: 'application/pdf',
-        source_file_size: pdfFile.size,
+        source_file_size: hostedPdf.size,
       }));
       const { data, error } = await db.from('scout_leads').insert(rows).select('*');
       if (error) throw new Error(error.message);
@@ -161,15 +177,18 @@ export function ScoutingPage() {
       setLeads(current => [...saved, ...current]);
       setSelectedIds(new Set(saved.map(lead => lead.id)));
       setShowPersonalizationPrompt(true);
-      setPdfFile(null;
       setPdfPreview([]);
-      toast({ title: saved.length + ' PDF contacts saved', description: 'Select Personalize selected to generate individual drafts.' });
+      toast({ title: saved.length + ' PDF contacts saved', description: 'The personalization prompt is ready for these contacts.' });
     } catch (error) {
-      toast({ variant: 'destructive', title: 'Could not save PDF contacts', description: error instanceof Error ? error.message : 'Try reading the PDF again.' });
+      toast({ variant: 'destructive', title: 'Could not save PDF contacts', description: error instanceof Error ? error.message : 'Try reading the stored PDF again.' });
     } finally {
       setSavingPdf(false);
     }
   };
+
+  useEffect(() => {
+    if (user) void loadHostedPdf();
+  }, [user]);
 
   const savePasted = async () => {
     const parsed = preview.length ? preview : parsePastedLeads(pasteText);
@@ -394,17 +413,17 @@ export function ScoutingPage() {
         <div>
           <div className="flex items-center gap-2 text-primary text-sm font-semibold mb-2"><Megaphone className="w-4 h-4" /> Scouting workspace</div>
           <h1 className="text-3xl font-bold tracking-tight">Paste leads, personalize, send</h1>
-          <p className="text-muted-foreground mt-2 max-w-2xl">Upload the PDF that already contains your lead research, or paste the same data from ChatGPT. The app keeps each contact separate, then personalizes from that contact's own website, owner, merits, and demerits.</p>
+          <p className="text-muted-foreground mt-2 max-w-2xl">The app reads the latest PDF already stored in your website Asset Library, or you can paste the same data from ChatGPT. The app keeps each contact separate, then personalizes from that contact's own website, owner, merits, and demerits.</p>
         </div>
         <Link href="/campaigns/history"><Button variant="outline" className="gap-2"><Mail className="w-4 h-4" /> Campaign history</Button></Link>
       </div>
 
       <Card className="border-primary/20 bg-primary/[0.03]">
-        <CardHeader><CardTitle>Upload your lead PDF</CardTitle><p className="text-sm text-muted-foreground">The PDF reader extracts the rows in your contact table. Each business stays separate, including its website, owner, emails, merits, demerits, and other fields.</p></CardHeader>
+        <CardHeader><CardTitle>Read the PDF already stored on your website</CardTitle><p className="text-sm text-muted-foreground">Scouting automatically reads the latest PDF in your existing Asset Library. There is no upload step here.</p></CardHeader>
         <CardContent className="space-y-4">
-          <Input type="file" accept="application/pdf,.pdf" onChange={event => void readPdf(event.target.files?.[0])} disabled={readingPdf || savingPdf} className="cursor-pointer" />
-          <p className="text-xs text-muted-foreground">Use a PDF with selectable text. A scanned image-only PDF needs OCR before the rows can be separated reliably.</p>
-          {readingPdf && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Reading each PDF row…</div>}
+          {readingPdf && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Reading the stored PDF and separating its contacts…</div>}
+          {pdfError && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{pdfError}</div>}
+          {hostedPdf && <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border bg-background p-3"><div><p className="font-semibold">{hostedPdf.name}</p><p className="text-xs text-muted-foreground mt-1">{pdfPreview.length ? pdfPreview.length + ' separate contacts recognized' : 'Stored PDF source'}</p></div><Button variant="outline" size="sm" onClick={() => void loadHostedPdf()} disabled={readingPdf || savingPdf}><Search className="w-4 h-4 mr-2" /> Read again</Button></div>}
           {pdfPreview.length > 0 && <div className="rounded-lg border bg-background p-3 space-y-3"><div className="flex items-center justify-between"><p className="font-semibold">PDF preview: {pdfPreview.length} contacts</p><Badge variant="outline">Ready to save</Badge></div><div className="max-h-56 overflow-auto space-y-1">{pdfPreview.slice(0, 8).map((lead, index) => <div key={lead.id} className="flex items-center gap-2 text-sm"><span className="text-muted-foreground w-5">{index + 1}.</span><span className="font-medium truncate">{lead.business_name}</span><span className="text-muted-foreground truncate">{extractLeadEmails(lead).join(', ') || 'No email'}</span><span className="text-muted-foreground truncate">{lead.website || 'No website'}</span></div>)}{pdfPreview.length > 8 && <p className="text-xs text-muted-foreground">+ {pdfPreview.length - 8} more contacts</p>}</div><Button onClick={savePdfLeads} disabled={savingPdf || readingPdf}>{savingPdf ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-2" />} Save PDF contacts</Button></div>}
         </CardContent>
       </Card>
@@ -442,7 +461,7 @@ export function ScoutingPage() {
           })}</div>}
         </CardContent>
       </Card>
-      <div className="flex items-start gap-2 text-xs text-muted-foreground max-w-3xl"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /><p>The app does not fetch or mix website data. It reads the rows from your uploaded PDF or pasted data, keeps each contact separate, and only sends after you review the individual drafts.</p></div>
+      <div className="flex items-start gap-2 text-xs text-muted-foreground max-w-3xl"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /><p>The app does not fetch or mix website data. It reads the rows from your stored PDF or pasted data, keeps each contact separate, and only sends after you review the individual drafts.</p></div>
     </div>
   );
 }
