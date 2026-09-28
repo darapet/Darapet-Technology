@@ -80,6 +80,7 @@ export function ScoutingPage() {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '-');
       const storagePath = user.id + '/' + crypto.randomUUID() + '-' + safeName;
       const { error: uploadError } = await db.storage.from('scouting-imports').upload(storagePath, file, { contentType: file.type || 'application/octet-stream', upsert: false });
+      const storageWarning = uploadError?.message || '';
       if (!uploadError) sourceFilePath = storagePath;
 
       const columns = Array.from(new Set(usable.flatMap(lead => lead.source_headers || Object.keys(lead.raw_data || {}))));
@@ -108,8 +109,8 @@ export function ScoutingPage() {
       if (importError) throw new Error(importError.message);
       const saved = (imported || []) as ScoutLead[];
       setLeads(current => [...saved, ...current]);
-      setSelectedIds(new Set(saved.map(lead => lead.id)));
-      toast({ title: 'Import complete', description: saved.length + ' lead' + (saved.length === 1 ? '' : 's') + ' added. Review the selection, then choose Research selected.' });
+      setSelectedIds(new Set());
+      toast({ title: 'Import complete', description: saved.length + ' lead' + (saved.length === 1 ? '' : 's') + ' added. Select the lead(s) you want to work on, then choose Research, Personalize, or Send.' + (storageWarning ? ' The original file could not be archived, but the lead rows were imported.' : '') });
     } catch (error) {
       toast({ variant: 'destructive', title: 'Could not import that file', description: error instanceof Error ? error.message : 'Check the file and try again.' });
     } finally {
@@ -153,7 +154,7 @@ export function ScoutingPage() {
         toast({ variant: 'destructive', title: 'Stored PDF sync skipped', description: error instanceof Error ? error.message : 'The existing leads were still loaded.' });
       }
       setLeads(loaded);
-      setSelectedIds(new Set(loaded.map(lead => lead.id)));
+      setSelectedIds(new Set());
       setLoading(false);
     };
     void load();
@@ -369,6 +370,8 @@ export function ScoutingPage() {
 
   const toggleSelected = (id: string) => setSelectedIds(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const selectedLeadIds = Array.from(selectedIds);
+  const selectVisible = () => setSelectedIds(current => { const next = new Set(current); filteredLeads.forEach(lead => next.add(lead.id)); return next; });
+  const clearSelected = () => setSelectedIds(new Set());
 
   if (loading) return <div className="max-w-6xl mx-auto space-y-6"><Skeleton className="h-10 w-72" /><div className="grid grid-cols-2 lg:grid-cols-4 gap-4">{[1, 2, 3, 4].map(item => <Skeleton key={item} className="h-24 rounded-xl" />)}</div><Skeleton className="h-96 rounded-xl" /></div>;
 
@@ -394,7 +397,7 @@ export function ScoutingPage() {
       </Card>
 
       <Card>
-        <CardHeader className="pb-3"><div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3"><div><CardTitle className="text-base">Saved contacts</CardTitle><p className="text-sm text-muted-foreground mt-1">Select contacts, personalize them as a batch, review each draft, then send.</p></div><div className="flex flex-wrap gap-2">{personalizing && <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Groq is researching and drafting…</span>}<Button variant="outline" size="sm" onClick={() => setLocation('/scouting/research?leadIds=' + encodeURIComponent(selectedLeadIds.join(',')))} disabled={!selectedLeadIds.length || personalizing || sending} className="gap-1.5"><Search className="w-3.5 h-3.5" /> Research selected</Button><Button variant="outline" size="sm" onClick={() => void personalizeSelected()} disabled={!selectedLeadIds.length || personalizing || sending} className="gap-1.5"><Sparkles className="w-3.5 h-3.5" /> Personalize selected</Button><select value={selectedTemplateId} onChange={event => setSelectedTemplateId(event.target.value)} className="h-9 rounded-md border border-input bg-background px-2 text-sm" aria-label="Choose email design">{(EMAIL_TEMPLATES as any[]).map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select><Button size="sm" onClick={sendSelected} disabled={sending || personalizing || !selectedIds.size} className="gap-1.5">{sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Send reviewed</Button></div></div>{sending && <Progress value={sendProgress} className="mt-3" />}</CardHeader>
+        <CardHeader className="pb-3"><div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3"><div><CardTitle className="text-base">Saved contacts</CardTitle><p className="text-sm text-muted-foreground mt-1">Select the exact lead(s) you want Groq to research, draft, or send to. Nothing runs until you choose them.</p></div><div className="flex flex-wrap gap-2"><Badge variant="secondary">{selectedIds.size} selected</Badge><Button variant="ghost" size="sm" onClick={selectVisible} disabled={!filteredLeads.length}>Select visible</Button><Button variant="ghost" size="sm" onClick={clearSelected} disabled={!selectedIds.size}>Clear</Button>{personalizing && <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Groq is researching and drafting…</span>}<Button variant="outline" size="sm" onClick={() => setLocation('/scouting/research?leadIds=' + encodeURIComponent(selectedLeadIds.join(',')))} disabled={!selectedLeadIds.length || personalizing || sending} className="gap-1.5"><Search className="w-3.5 h-3.5" /> Research selected</Button><Button variant="outline" size="sm" onClick={() => void personalizeSelected()} disabled={!selectedLeadIds.length || personalizing || sending} className="gap-1.5"><Sparkles className="w-3.5 h-3.5" /> Personalize selected</Button><select value={selectedTemplateId} onChange={event => setSelectedTemplateId(event.target.value)} className="h-9 rounded-md border border-input bg-background px-2 text-sm" aria-label="Choose email design">{(EMAIL_TEMPLATES as any[]).map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select><Button size="sm" onClick={sendSelected} disabled={sending || personalizing || !selectedIds.size} className="gap-1.5">{sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Send reviewed</Button></div></div>{sending && <Progress value={sendProgress} className="mt-3" />}</CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3"><div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total</p><p className="text-2xl font-bold mt-1">{stats.total}</p></div><div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Ready</p><p className="text-2xl font-bold mt-1">{stats.ready}</p></div><div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Drafts</p><p className="text-2xl font-bold mt-1">{stats.drafts}</p></div><div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Sent</p><p className="text-2xl font-bold mt-1">{stats.sent}</p></div></div>
           <div className="flex flex-col sm:flex-row gap-2"><div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input value={filter} onChange={event => setFilter(event.target.value)} placeholder="Search business, owner, email, website, or any pasted field" className="pl-9" /></div><select value={statusFilter} onChange={event => setStatusFilter(event.target.value as StatusFilter)} className="h-10 rounded-md border border-input bg-background px-3 text-sm"><option value="all">All contacts</option><option value="ready">Ready</option><option value="drafted">Draft ready</option><option value="sent">Sent</option><option value="opted_out">Opted out</option></select></div>
