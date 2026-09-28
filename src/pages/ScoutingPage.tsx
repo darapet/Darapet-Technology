@@ -133,7 +133,19 @@ export function ScoutingPage() {
       },
     });
     if (data?.error) throw new Error(data.error);
-    if (error) throw new Error(error.message || 'The OpenAI scouting agent failed.');
+    if (error) {
+      let message = error.message || 'The OpenAI scouting agent failed.';
+      try {
+        const context = (error as any).context;
+        if (context && typeof context.clone === 'function') {
+          const payload = await context.clone().json();
+          if (typeof payload?.error === 'string') message = payload.error;
+        }
+      } catch {
+        // Keep Supabase's fallback message when the error response is not JSON.
+      }
+      throw new Error(message);
+    }
     if (!data?.subject || !data?.body) throw new Error('The OpenAI scouting agent returned no draft.');
     return data as { subject: string; body: string; research?: Partial<ResearchSnapshot>; searched?: boolean };
   };
