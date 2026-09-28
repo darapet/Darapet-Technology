@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'wouter';
+import { Link, useLocation } from 'wouter';
 import {
   AlertCircle, Check, CheckCircle2, ChevronDown, Globe2, Loader2, Mail, Megaphone,
-  Search, Send, ShieldCheck, Sparkles, UserRound, X,
+  FileUp, Search, Send, ShieldCheck, Sparkles, UserRound, X,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -61,11 +61,63 @@ export function ScoutingPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedTemplateId, setSelectedTemplateId] = useState((EMAIL_TEMPLATES as any[])[0]?.id || '');
-  const autoDraftStarted = useRef(false);
+  const [, setLocation] = useLocation();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
   const [gmailStatus, setGmailStatus] = useState<GmailStatus>({ connected: false, email: null, connectedAt: null });
   const [gmailLoading, setGmailLoading] = useState(true);
   const [gmailAction, setGmailAction] = useState(false);
   const [gmailError, setGmailError] = useState('');
+  const importLeadFile = async (file: File) => {
+    if (!user) return;
+    setImporting(true);
+    try {
+      const parsed = await extractLeadsFromFile(file);
+      const usable = parsed.filter(lead => Object.keys(lead.raw_data || {}).length > 0 || lead.business_name !== file.name);
+      if (!usable.length) throw new Error('No lead rows were found in that file.');
+
+      let sourceFilePath: string | null = null;
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '-');
+      const storagePath = user.id + '/' + crypto.randomUUID() + '-' + safeName;
+      const { error: uploadError } = await db.storage.from('scouting-imports').upload(storagePath, file, { contentType: file.type || 'application/octet-stream', upsert: false });
+      if (!uploadError) sourceFilePath = storagePath;
+
+      const columns = Array.from(new Set(usable.flatMap(lead => lead.source_headers || Object.keys(lead.raw_data || {}))));
+      const { data: batch, error: batchError } = await db.from('scout_imports').insert({
+        user_id: user.id,
+        name: file.name,
+        original_file_name: file.name,
+        source_file_path: sourceFilePath,
+        source_file_type: file.type || 'application/octet-stream',
+        source_file_size: file.size,
+        columns,
+        row_count: usable.length,
+      }).select('id').single();
+      if (batchError || !batch?.id) throw new Error(batchError?.message || 'Could not create the import batch.');
+
+      const rows = usable.map(lead => ({
+        ...lead,
+        user_id: user.id,
+        import_id: batch.id,
+        source_file_name: file.name,
+        source_file_path: sourceFilePath,
+        source_file_type: file.type || 'application/octet-stream',
+        source_file_size: file.size,
+      }));
+      const { data: imported, error: importError } = await db.from('scout_leads').insert(rows).select('*');
+      if (importError) throw new Error(importError.message);
+      const saved = (imported || []) as ScoutLead[];
+      setLeads(current => [...saved, ...current]);
+      setSelectedIds(new Set(saved.map(lead => lead.id)));
+      toast({ title: 'Import complete', description: saved.length + ' lead' + (saved.length === 1 ? '' : 's') + ' added. Review the selection, then choose Research selected.' });
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Could not import that file', description: error instanceof Error ? error.message : 'Check the file and try again.' });
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   useEffect(() => {
     if (!user) return;
     const load = async () => {
@@ -186,7 +238,7 @@ export function ScoutingPage() {
       email_body: first?.body || '',
       research_status: 'researched',
       research_data: latestResearch || storedResearch(lead),
-      research_summary: latestResearch?.description || latestResearch?.websiteName || 'OpenAI research completed',
+      research_summary: latestResearch?.description || latestResearch?.websiteName || 'AI research completed',
       pain_points: latestResearch?.demerits || [],
     });
   };
@@ -206,20 +258,12 @@ export function ScoutingPage() {
       }
       toast({ title: completed + ' personalized drafts ready', description: 'Choose a design, review the messages, then send.' });
     } catch (error) {
-      toast({ variant: 'destructive', title: 'OpenAI personalization stopped', description: error instanceof Error ? error.message : 'Check the OpenAI connection and try again.' });
+      toast({ variant: 'destructive', title: 'AI personalization stopped', description: error instanceof Error ? error.message : 'Check the OpenAI connection and try again.' });
     } finally {
       setPersonalizing(false);
     }
   };
 
-  useEffect(() => {
-    if (loading || !leads.length || personalizing) return;
-    const needsDrafts = leads.some(lead => !lead.opted_out && !lead.email_drafts?.length && extractLeadEmails(lead).length);
-    if (needsDrafts && !autoDraftStarted.current) {
-      autoDraftStarted.current = true;
-      void personalizeSelected();
-    }
-  }, [loading]);
 
   const connectGmail = async () => {
     setGmailAction(true);
@@ -324,6 +368,7 @@ export function ScoutingPage() {
   const stats = { total: activeLeads.length, ready: activeLeads.filter(lead => leadStatus(lead) === 'Ready to personalize').length, drafts: activeLeads.filter(lead => leadStatus(lead) === 'Draft ready').length, sent: activeLeads.filter(lead => leadStatus(lead) === 'Sent').length };
 
   const toggleSelected = (id: string) => setSelectedIds(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const selectedLeadIds = Array.from(selectedIds);
 
   if (loading) return <div className="max-w-6xl mx-auto space-y-6"><Skeleton className="h-10 w-72" /><div className="grid grid-cols-2 lg:grid-cols-4 gap-4">{[1, 2, 3, 4].map(item => <Skeleton key={item} className="h-24 rounded-xl" />)}</div><Skeleton className="h-96 rounded-xl" /></div>;
 
@@ -333,33 +378,39 @@ export function ScoutingPage() {
         <div>
           <div className="flex items-center gap-2 text-primary text-sm font-semibold mb-2"><Megaphone className="w-4 h-4" /> Scouting workspace</div>
           <h1 className="text-3xl font-bold tracking-tight">AI research, choose a design, send</h1>
-          <p className="text-muted-foreground mt-2 max-w-2xl">ChatGPT researches each saved lead separately and prepares an individual draft. Choose your email design, review the messages, and send.</p>
+          <p className="text-muted-foreground mt-2 max-w-2xl">Groq researches and drafts only the leads you select. Choose your email design, review the messages, and send.</p>
         </div>
         <Link href="/campaigns/history"><Button variant="outline" className="gap-2"><Mail className="w-4 h-4" /> Campaign history</Button></Link>
       </div>
 
+      <Card className="border-primary/20 bg-primary/[0.03]">
+        <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div><p className="font-semibold flex items-center gap-2"><FileUp className="w-4 h-4 text-primary" /> Import more leads</p><p className="text-sm text-muted-foreground mt-1">Upload a PDF, CSV, JSON, TXT, or TSV file. Nothing is researched or drafted until you choose the leads.</p></div>
+          <div className="flex items-center gap-2"><input ref={fileInputRef} type="file" accept=".pdf,.csv,.json,.txt,.tsv,.xml,.html,application/pdf,text/csv,application/json,text/plain" className="hidden" onChange={event => { const file = event.target.files?.[0]; if (file) void importLeadFile(file); }} /><Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing} className="gap-1.5">{importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileUp className="w-3.5 h-3.5" />} {importing ? 'Importing…' : 'Choose file'}</Button></div>
+        </CardContent>
+      </Card>
       <Card className={gmailStatus.connected ? 'border-green-200 bg-green-500/[0.03]' : 'border-primary/20 bg-primary/[0.03]'}>
         <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div className="flex items-start gap-3"><div className={'w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ' + (gmailStatus.connected ? 'bg-green-500/10 text-green-600' : 'bg-primary/10 text-primary')}><Mail className="w-5 h-5" /></div><div><p className="font-semibold flex items-center gap-2">Send from Gmail {gmailStatus.connected && <Badge variant="outline" className="text-green-600 border-green-200">Connected</Badge>}</p>{gmailLoading ? <p className="text-sm text-muted-foreground mt-1">Checking connection…</p> : gmailStatus.connected ? <p className="text-sm text-muted-foreground mt-1">{gmailStatus.email} will be used for reviewed scouting sends.</p> : <p className="text-sm text-muted-foreground mt-1">Connect a mailbox so messages send from your Gmail account.</p>}{gmailError && <p className="text-xs text-amber-600 mt-1">{gmailError}</p>}</div></div>{gmailStatus.connected ? <Button variant="outline" size="sm" onClick={disconnectConnectedGmail} disabled={gmailAction}>{gmailAction ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />} Disconnect</Button> : <Button size="sm" onClick={connectGmail} disabled={gmailAction || gmailLoading}>{gmailAction ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />} Connect Gmail</Button>}</CardContent>
       </Card>
 
       <Card>
-        <CardHeader className="pb-3"><div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3"><div><CardTitle className="text-base">Saved contacts</CardTitle><p className="text-sm text-muted-foreground mt-1">Select contacts, personalize them as a batch, review each draft, then send.</p></div><div className="flex flex-wrap gap-2">{personalizing && <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground"><Loader2 className="w-3.5 h-3.5 animate-spin" /> ChatGPT is researching and drafting…</span>}<select value={selectedTemplateId} onChange={event => setSelectedTemplateId(event.target.value)} className="h-9 rounded-md border border-input bg-background px-2 text-sm" aria-label="Choose email design">{(EMAIL_TEMPLATES as any[]).map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select><Button size="sm" onClick={sendSelected} disabled={sending || personalizing || !selectedIds.size} className="gap-1.5">{sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Send reviewed</Button></div></div>{sending && <Progress value={sendProgress} className="mt-3" />}</CardHeader>
+        <CardHeader className="pb-3"><div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3"><div><CardTitle className="text-base">Saved contacts</CardTitle><p className="text-sm text-muted-foreground mt-1">Select contacts, personalize them as a batch, review each draft, then send.</p></div><div className="flex flex-wrap gap-2">{personalizing && <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Groq is researching and drafting…</span>}<Button variant="outline" size="sm" onClick={() => setLocation('/scouting/research?leadIds=' + encodeURIComponent(selectedLeadIds.join(',')))} disabled={!selectedLeadIds.length || personalizing || sending} className="gap-1.5"><Search className="w-3.5 h-3.5" /> Research selected</Button><Button variant="outline" size="sm" onClick={() => void personalizeSelected()} disabled={!selectedLeadIds.length || personalizing || sending} className="gap-1.5"><Sparkles className="w-3.5 h-3.5" /> Personalize selected</Button><select value={selectedTemplateId} onChange={event => setSelectedTemplateId(event.target.value)} className="h-9 rounded-md border border-input bg-background px-2 text-sm" aria-label="Choose email design">{(EMAIL_TEMPLATES as any[]).map(template => <option key={template.id} value={template.id}>{template.name}</option>)}</select><Button size="sm" onClick={sendSelected} disabled={sending || personalizing || !selectedIds.size} className="gap-1.5">{sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Send reviewed</Button></div></div>{sending && <Progress value={sendProgress} className="mt-3" />}</CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3"><div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Total</p><p className="text-2xl font-bold mt-1">{stats.total}</p></div><div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Ready</p><p className="text-2xl font-bold mt-1">{stats.ready}</p></div><div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Drafts</p><p className="text-2xl font-bold mt-1">{stats.drafts}</p></div><div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">Sent</p><p className="text-2xl font-bold mt-1">{stats.sent}</p></div></div>
           <div className="flex flex-col sm:flex-row gap-2"><div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" /><Input value={filter} onChange={event => setFilter(event.target.value)} placeholder="Search business, owner, email, website, or any pasted field" className="pl-9" /></div><select value={statusFilter} onChange={event => setStatusFilter(event.target.value as StatusFilter)} className="h-10 rounded-md border border-input bg-background px-3 text-sm"><option value="all">All contacts</option><option value="ready">Ready</option><option value="drafted">Draft ready</option><option value="sent">Sent</option><option value="opted_out">Opted out</option></select></div>
-          {filteredLeads.length === 0 ? <div className="py-16 text-center border border-dashed rounded-xl"><Megaphone className="w-10 h-10 mx-auto text-muted-foreground/40 mb-3" /><p className="font-medium">No saved contacts yet</p><p className="text-sm text-muted-foreground mt-1">Paste your ChatGPT-generated lead data above to begin.</p></div> : <div className="space-y-2">{filteredLeads.map(lead => {
+          {filteredLeads.length === 0 ? <div className="py-16 text-center border border-dashed rounded-xl"><Megaphone className="w-10 h-10 mx-auto text-muted-foreground/40 mb-3" /><p className="font-medium">No saved contacts yet</p><p className="text-sm text-muted-foreground mt-1">Choose a file above to import leads and begin.</p></div> : <div className="space-y-2">{filteredLeads.map(lead => {
             const expanded = expandedId === lead.id;
             const selected = selectedIds.has(lead.id);
             const research = storedResearch(lead);
             const drafts = lead.email_drafts?.length ? lead.email_drafts : lead.email_subject && lead.email_body && lead.email ? [{ recipientEmail: lead.email, subject: lead.email_subject, body: lead.email_body }] : [];
             return <div key={lead.id} className={'rounded-xl border transition-colors ' + (expanded ? 'border-primary/40 bg-primary/[0.02]' : 'border-border/70')}>
               <div className="flex items-start gap-3 p-3 sm:p-4"><input aria-label={'Select ' + lead.business_name} type="checkbox" checked={selected} onChange={() => toggleSelected(lead.id)} className="mt-1.5 h-4 w-4 accent-primary" /><button type="button" onClick={() => setExpandedId(expanded ? null : lead.id)} className="flex-1 min-w-0 text-left"><div className="flex flex-wrap items-center gap-2"><span className="font-semibold truncate">{lead.business_name}</span><Badge variant="outline" className={leadStatus(lead) === 'Sent' ? 'text-green-600 border-green-200' : ''}>{leadStatus(lead)}</Badge></div><div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-muted-foreground">{lead.owner_name && <span className="flex items-center gap-1"><UserRound className="w-3 h-3" />{lead.owner_name}</span>}<span>{extractLeadEmails(lead).join(', ') || 'No email'}</span>{lead.website && <span className="flex items-center gap-1"><Globe2 className="w-3 h-3" />{displayWebsite(lead.website)}</span>}</div></button><Button variant="ghost" size="icon" onClick={() => setExpandedId(expanded ? null : lead.id)} aria-label="Toggle contact details">{expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronDown className="w-4 h-4 -rotate-90" />}</Button></div>
-              {expanded && <div className="border-t px-4 py-4 space-y-4 bg-muted/[0.18]"><div className="grid lg:grid-cols-2 gap-4"><div className="space-y-3"><div className="rounded-lg border bg-background p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Contact details</p><div className="grid sm:grid-cols-2 gap-3 mt-3"><div><Label className="text-xs">Business</Label><Input value={lead.business_name} onChange={event => updateLocalLead(lead.id, { business_name: event.target.value })} onBlur={event => saveLead(lead.id, { business_name: event.target.value })} /></div><div><Label className="text-xs">Owner / contact</Label><Input value={lead.owner_name} onChange={event => updateLocalLead(lead.id, { owner_name: event.target.value })} onBlur={event => saveLead(lead.id, { owner_name: event.target.value })} /></div><div><Label className="text-xs">Website</Label><Input value={lead.website} onChange={event => updateLocalLead(lead.id, { website: event.target.value })} onBlur={event => saveLead(lead.id, { website: event.target.value })} /></div><div><Label className="text-xs">Primary email</Label><Input value={lead.email} onChange={event => updateLocalLead(lead.id, { email: event.target.value })} onBlur={event => saveLead(lead.id, { email: event.target.value })} /></div></div></div><div className="rounded-lg border bg-background p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">All pasted fields</p><div className="grid sm:grid-cols-2 gap-2 mt-3 max-h-72 overflow-auto">{Object.entries(lead.raw_data || {}).map(([key, value]) => <div key={key} className="rounded-md bg-muted/50 p-2"><p className="text-[11px] font-medium text-muted-foreground break-words">{key}</p><p className="text-sm break-words">{value || '—'}</p></div>)}</div></div><Button variant={lead.opted_out ? 'secondary' : 'ghost'} size="sm" onClick={() => saveLead(lead.id, { opted_out: !lead.opted_out })} className="gap-1.5 w-fit">{lead.opted_out ? <Check className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5" />} {lead.opted_out ? 'Opted out' : 'Mark opted out'}</Button></div><div className="space-y-3"><div className="rounded-lg border bg-background p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">ChatGPT research for this contact</p>{research ? <div className="space-y-3 mt-3"><div><p className="text-xs font-semibold uppercase text-muted-foreground">Website name</p><p className="text-sm mt-1">{research.websiteName || '—'}</p></div><div><p className="text-xs font-semibold uppercase text-muted-foreground">Description / concentration</p><p className="text-sm mt-1">{research.description || research.concentration || '—'}</p></div><div className="grid sm:grid-cols-2 gap-3"><div><p className="text-xs font-semibold uppercase text-muted-foreground">Merits</p>{research.merits.length ? <ul className="list-disc pl-4 mt-1 text-sm space-y-1">{research.merits.map(item => <li key={item}>{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-1">—</p>}</div><div><p className="text-xs font-semibold uppercase text-muted-foreground">Demerits</p>{research.demerits.length ? <ul className="list-disc pl-4 mt-1 text-sm space-y-1">{research.demerits.map(item => <li key={item}>{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-1">—</p>}</div></div><div><p className="text-xs font-semibold uppercase text-muted-foreground">Improvements</p><p className="text-sm mt-1">{research.improvements.join('; ') || '—'}</p></div></div> : <p className="text-sm text-muted-foreground mt-2">No structured research fields were detected in this row.</p>}</div><div className="rounded-lg border bg-background p-3 space-y-2"><div className="flex items-center justify-between gap-2"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Personalized drafts</p>{drafts.length > 0 && <Badge variant="outline" className="text-green-600 border-green-200">{drafts.length} recipient{drafts.length === 1 ? '' : 's'}</Badge>}</div>{drafts.length ? drafts.map(draft => <div key={draft.recipientEmail} className="rounded-md border p-2 space-y-2"><p className="text-xs font-medium text-muted-foreground">{draft.recipientEmail}</p><Input value={draft.subject} onChange={event => { const next = drafts.map(item => item.recipientEmail === draft.recipientEmail ? { ...item, subject: event.target.value } : item); updateLocalLead(lead.id, { email_drafts: next, email_subject: next[0]?.subject || '' }); }} onBlur={() => saveLead(lead.id, { email_drafts: drafts })} /><Textarea value={draft.body} onChange={event => { const next = drafts.map(item => item.recipientEmail === draft.recipientEmail ? { ...item, body: event.target.value } : item); updateLocalLead(lead.id, { email_drafts: next, email_body: next[0]?.body || '' }); }} onBlur={() => saveLead(lead.id, { email_drafts: drafts })} className="min-h-32" /></div>) : <p className="text-sm text-muted-foreground py-4">Select this contact and click Personalize selected.</p>}{drafts.length > 0 && <Button variant="outline" size="sm" onClick={() => personalizeLead(lead)} disabled={personalizing || lead.opted_out} className="gap-1.5"><Sparkles className="w-3.5 h-3.5" /> Regenerate</Button>}</div></div></div></div>}
+              {expanded && <div className="border-t px-4 py-4 space-y-4 bg-muted/[0.18]"><div className="grid lg:grid-cols-2 gap-4"><div className="space-y-3"><div className="rounded-lg border bg-background p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Contact details</p><div className="grid sm:grid-cols-2 gap-3 mt-3"><div><Label className="text-xs">Business</Label><Input value={lead.business_name} onChange={event => updateLocalLead(lead.id, { business_name: event.target.value })} onBlur={event => saveLead(lead.id, { business_name: event.target.value })} /></div><div><Label className="text-xs">Owner / contact</Label><Input value={lead.owner_name} onChange={event => updateLocalLead(lead.id, { owner_name: event.target.value })} onBlur={event => saveLead(lead.id, { owner_name: event.target.value })} /></div><div><Label className="text-xs">Website</Label><Input value={lead.website} onChange={event => updateLocalLead(lead.id, { website: event.target.value })} onBlur={event => saveLead(lead.id, { website: event.target.value })} /></div><div><Label className="text-xs">Primary email</Label><Input value={lead.email} onChange={event => updateLocalLead(lead.id, { email: event.target.value })} onBlur={event => saveLead(lead.id, { email: event.target.value })} /></div></div></div><div className="rounded-lg border bg-background p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">All pasted fields</p><div className="grid sm:grid-cols-2 gap-2 mt-3 max-h-72 overflow-auto">{Object.entries(lead.raw_data || {}).map(([key, value]) => <div key={key} className="rounded-md bg-muted/50 p-2"><p className="text-[11px] font-medium text-muted-foreground break-words">{key}</p><p className="text-sm break-words">{value || '—'}</p></div>)}</div></div><Button variant={lead.opted_out ? 'secondary' : 'ghost'} size="sm" onClick={() => saveLead(lead.id, { opted_out: !lead.opted_out })} className="gap-1.5 w-fit">{lead.opted_out ? <Check className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5" />} {lead.opted_out ? 'Opted out' : 'Mark opted out'}</Button></div><div className="space-y-3"><div className="rounded-lg border bg-background p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Groq research for this contact</p>{research ? <div className="space-y-3 mt-3"><div><p className="text-xs font-semibold uppercase text-muted-foreground">Website name</p><p className="text-sm mt-1">{research.websiteName || '—'}</p></div><div><p className="text-xs font-semibold uppercase text-muted-foreground">Description / concentration</p><p className="text-sm mt-1">{research.description || research.concentration || '—'}</p></div><div className="grid sm:grid-cols-2 gap-3"><div><p className="text-xs font-semibold uppercase text-muted-foreground">Merits</p>{research.merits.length ? <ul className="list-disc pl-4 mt-1 text-sm space-y-1">{research.merits.map(item => <li key={item}>{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-1">—</p>}</div><div><p className="text-xs font-semibold uppercase text-muted-foreground">Demerits</p>{research.demerits.length ? <ul className="list-disc pl-4 mt-1 text-sm space-y-1">{research.demerits.map(item => <li key={item}>{item}</li>)}</ul> : <p className="text-sm text-muted-foreground mt-1">—</p>}</div></div><div><p className="text-xs font-semibold uppercase text-muted-foreground">Improvements</p><p className="text-sm mt-1">{research.improvements.join('; ') || '—'}</p></div></div> : <p className="text-sm text-muted-foreground mt-2">No structured research fields were detected in this row.</p>}</div><div className="rounded-lg border bg-background p-3 space-y-2"><div className="flex items-center justify-between gap-2"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Personalized drafts</p>{drafts.length > 0 && <Badge variant="outline" className="text-green-600 border-green-200">{drafts.length} recipient{drafts.length === 1 ? '' : 's'}</Badge>}</div>{drafts.length ? drafts.map(draft => <div key={draft.recipientEmail} className="rounded-md border p-2 space-y-2"><p className="text-xs font-medium text-muted-foreground">{draft.recipientEmail}</p><Input value={draft.subject} onChange={event => { const next = drafts.map(item => item.recipientEmail === draft.recipientEmail ? { ...item, subject: event.target.value } : item); updateLocalLead(lead.id, { email_drafts: next, email_subject: next[0]?.subject || '' }); }} onBlur={() => saveLead(lead.id, { email_drafts: drafts })} /><Textarea value={draft.body} onChange={event => { const next = drafts.map(item => item.recipientEmail === draft.recipientEmail ? { ...item, body: event.target.value } : item); updateLocalLead(lead.id, { email_drafts: next, email_body: next[0]?.body || '' }); }} onBlur={() => saveLead(lead.id, { email_drafts: drafts })} className="min-h-32" /></div>) : <p className="text-sm text-muted-foreground py-4">Select this contact and click Personalize selected.</p>}{drafts.length > 0 && <Button variant="outline" size="sm" onClick={() => personalizeLead(lead)} disabled={personalizing || lead.opted_out} className="gap-1.5"><Sparkles className="w-3.5 h-3.5" /> Regenerate</Button>}</div></div></div></div>}
             </div>;
           })}</div>}
         </CardContent>
       </Card>
-      <div className="flex items-start gap-2 text-xs text-muted-foreground max-w-3xl"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /><p>ChatGPT researches each saved lead separately. No contact data is mixed, and nothing is sent until you review the individual drafts.</p></div>
+      <div className="flex items-start gap-2 text-xs text-muted-foreground max-w-3xl"><AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /><p>Groq processes only the leads you select. No contact data is mixed, and nothing is sent until you review the individual drafts.</p></div>
     </div>
   );
 }
