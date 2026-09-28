@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'wouter';
 import {
   AlertCircle, Check, CheckCircle2, ChevronDown, Globe2, Loader2, Mail, Megaphone,
@@ -61,6 +61,7 @@ export function ScoutingPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedTemplateId, setSelectedTemplateId] = useState((EMAIL_TEMPLATES as any[])[0]?.id || '');
+  const autoDraftStarted = useRef(false);
   const [gmailStatus, setGmailStatus] = useState<GmailStatus>({ connected: false, email: null, connectedAt: null });
   const [gmailLoading, setGmailLoading] = useState(true);
   const [gmailAction, setGmailAction] = useState(false);
@@ -201,7 +202,10 @@ export function ScoutingPage() {
   useEffect(() => {
     if (loading || !leads.length || personalizing) return;
     const needsDrafts = leads.some(lead => !lead.opted_out && !lead.email_drafts?.length && extractLeadEmails(lead).length);
-    if (needsDrafts) void personalizeSelected();
+    if (needsDrafts && !autoDraftStarted.current) {
+      autoDraftStarted.current = true;
+      void personalizeSelected();
+    }
   }, [loading]);
 
   const connectGmail = async () => {
