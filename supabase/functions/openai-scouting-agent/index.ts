@@ -34,6 +34,31 @@ function outputText(body: any) {
     .join('\n');
 }
 
+function openAiErrorResponse(upstream: Response, result: any) {
+  const openAiError = result?.error || {};
+  const type = String(openAiError.type || '').toLowerCase();
+  const code = String(openAiError.code || '').toLowerCase();
+  const message = String(openAiError.message || '').trim();
+  let error = message || 'OpenAI request failed.';
+
+  if (upstream.status === 401) {
+    error = 'OpenAI rejected this API key. Check that the key is active and belongs to the correct OpenAI project.';
+  } else if (upstream.status === 429) {
+    const quotaError = code === 'insufficient_quota' || type === 'insufficient_quota' || /quota|billing|credit/i.test(message);
+    error = quotaError
+      ? 'Your OpenAI API quota is exhausted or billing is inactive. Add API credits or use a key from a funded OpenAI project, then try again.'
+      : 'OpenAI is rate-limiting requests right now. Wait a moment and try again.';
+  }
+
+  return responseJson({
+    error,
+    provider: 'openai',
+    code: code || undefined,
+    type: type || undefined,
+    retryAfter: upstream.headers.get('retry-after') || undefined,
+  }, upstream.status);
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (request.method !== 'POST') return responseJson({ error: 'Use POST.' }, 405);
@@ -93,7 +118,7 @@ Deno.serve(async (request) => {
       }),
     });
     const result = await upstream.json();
-    if (!upstream.ok) return responseJson({ error: result?.error?.message || 'OpenAI request failed.' }, upstream.status);
+    if (!upstream.ok) return openAiErrorResponse(upstream, result);
     const parsed = parseJson(outputText(result));
     if (!parsed?.subject || !parsed?.body) return responseJson({ error: 'OpenAI returned no usable email draft.' }, 502);
     const research = parsed.research && typeof parsed.research === 'object' ? parsed.research : {};
