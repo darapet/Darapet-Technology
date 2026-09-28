@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -25,21 +26,38 @@ function parseJson(value: string): any | null {
 }
 
 function outputText(body: any) {
-  if (typeof body.output_text === 'string') return body.output_text;
-  return (body.output || [])
-    .flatMap((item: any) => item.content || [])
-    .filter((part: any) => part.type === 'output_text' && typeof part.text === 'string')
+  if (typeof body?.output_text === 'string') return body.output_text;
+  return (Array.isArray(body?.output) ? body.output : [])
+    .flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
+    .filter((part: any) => part?.type === 'output_text' && typeof part?.text === 'string')
     .map((part: any) => part.text)
-    .join('\\n');
+    .join('\n');
 }
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (request.method !== 'POST') return responseJson({ error: 'Use POST.' }, 405);
-  if (!request.headers.get('authorization')) return responseJson({ error: 'Authentication is required.' }, 401);
 
-  const apiKey = Deno.env.get('OPENAI_API_KEY');
-  if (!apiKey) return responseJson({ error: 'OPENAI_API_KEY is not configured for the OpenAI scouting agent.' }, 503);
+  const authorization = request.headers.get('Authorization') || request.headers.get('authorization');
+  if (!authorization?.startsWith('Bearer ')) return responseJson({ error: 'Authentication is required.' }, 401);
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('SUPABASE_PUBLISHABLE_KEY');
+  if (!supabaseUrl || !supabaseAnonKey) return responseJson({ error: 'The Supabase environment is not configured for this edge function.' }, 503);
+
+  const userClient = createClient(supabaseUrl, supabaseAnonKey, { global: { headers: { Authorization: authorization } } });
+  const { data: authData, error: authError } = await userClient.auth.getUser();
+  if (authError || !authData.user) return responseJson({ error: 'Your session is invalid or expired. Please sign in again.' }, 401);
+
+  const { data: profile, error: profileError } = await userClient
+    .from('profiles')
+    .select('openai_api_key')
+    .eq('id', authData.user.id)
+    .maybeSingle();
+  if (profileError) return responseJson({ error: 'Could not load your OpenAI connection from your profile.' }, 500);
+
+  const apiKey = String(profile?.openai_api_key || '').trim();
+  if (!apiKey) return responseJson({ error: 'Add your OpenAI API key in Settings before using scouting.' }, 422);
 
   let body: any;
   try { body = await request.json(); } catch { return responseJson({ error: 'Request body must be JSON.' }, 400); }
@@ -59,7 +77,7 @@ Deno.serve(async (request) => {
     'Existing research fields: ' + JSON.stringify(lead.research_data || {}),
     'All fields from the lead source: ' + rawData,
     'Return JSON only with this shape: {"research":{"websiteName":"","description":"","merits":[],"demerits":[],"concentration":"","improvements":[],"contactHints":[]},"subject":"","body":""}.',
-  ].join('\\n');
+  ].join('\n');
 
   try {
     const upstream = await fetch('https://api.openai.com/v1/responses', {
