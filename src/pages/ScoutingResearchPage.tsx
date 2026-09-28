@@ -42,7 +42,7 @@ function snapshotFromLead(lead: ScoutLead): ResearchSnapshot | null {
 }
 
 export function ScoutingResearchPage() {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
@@ -65,21 +65,16 @@ export function ScoutingResearchPage() {
       if (targetLeadId) query.eq('id', targetLeadId);
       if (targetImportId) query.eq('import_id', targetImportId);
       if (targetLeadIds.length) query.in('id', targetLeadIds);
-      const [{ data, error }, { data: settings }] = await Promise.all([
-        query,
-        db.from('settings').select('groq_api_key').eq('id', 1).maybeSingle(),
-      ]);
+      const { data, error } = await query;
       if (error) toast({ variant: 'destructive', title: 'Could not load leads', description: error.message });
       const loaded = (data || []) as ScoutLead[];
       setLeads(loaded);
-      setGroqKey(settings?.groq_api_key || '');
       setResults(Object.fromEntries(loaded.map(lead => [lead.id, snapshotFromLead(lead)]).filter((entry): entry is [string, ResearchSnapshot] => Boolean(entry[1]))));
       setLoading(false);
     };
     void load();
   }, [targetImportId, targetLeadId, targetLeadIds.join(','), toast, user]);
 
-  const aiKey = profile?.groq_api_key || groqKey;
   const websiteTargets = useMemo(() => leads.map(lead => {
     const website = normalizeWebsite(lead.website) || Object.values(lead.raw_data || {}).map(normalizeWebsite).find(Boolean) || '';
     return website ? { lead, website } : null;
@@ -87,23 +82,24 @@ export function ScoutingResearchPage() {
   const missingWebsiteLeads = leads.filter(lead => !websiteTargets.some(target => target.lead.id === lead.id));
 
   const callGroq = async (evidence: string, lead: ScoutLead, website: string, scraped: ScrapeResult) => {
-    if (!aiKey) return null;
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + aiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages: [
-          { role: 'system', content: 'Return only valid JSON. Do not invent facts. If evidence is missing, use empty arrays and state that clearly.' },
-          { role: 'user', content: 'Analyze this fetched website evidence.\nWebsite: ' + website + '\nKnown business: ' + lead.business_name + '\nKnown owner: ' + lead.owner_name + '\nTitle: ' + (scraped.title || 'None') + '\nDescription: ' + (scraped.description || 'None') + '\nContact hints: ' + (scraped.contactHints || []).join('; ') + '\nFetched text: ' + evidence.slice(0, 8000) + '\nInstruction: ' + prompt + '\nReturn JSON exactly as {"website_name":"","owner_name":"","merits":[],"demerits":[],"concentration":"","improvements":[],"contact_hints":[]}.' }
-        ],
-        temperature: 0.2,
-        max_tokens: 900,
-      }),
+    const { data, error } = await supabase.functions.invoke('groq-scouting-research', {
+      body: { evidence, lead, website, scraped, prompt },
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data?.error?.message || 'AI analysis failed.');
-    return parseAiJson<{ website_name?: string; owner_name?: string; merits?: string[]; demerits?: string[]; concentration?: string; improvements?: string[]; contact_hints?: string[] }>(data.choices?.[0]?.message?.content || '');
+    if (error) {
+      let message = error.message || 'Groq research failed.';
+      try {
+        const context = (error as any).context;
+        if (context && typeof context.clone === 'function') {
+          const payload = await context.clone().json();
+          if (typeof payload?.error === 'string') message = payload.error;
+        }
+      } catch {
+        // Keep Supabase's fallback message when the error response is not JSON.
+      }
+      throw new Error(message);
+    }
+    if (data?.error) throw new Error(data.error);
+    return data?.research || null;
   };
 
   const websiteForLead = (lead: ScoutLead) => normalizeWebsite(lead.website) || Object.values(lead.raw_data || {}).map(normalizeWebsite).find(Boolean) || '';
