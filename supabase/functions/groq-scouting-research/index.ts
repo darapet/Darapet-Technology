@@ -28,6 +28,20 @@ async function readJson(response: Response) {
   try { return await response.json(); } catch { return {}; }
 }
 
+async function readOriginalFile(userClient: any, userId: string, sourceFilePath: string, sourceFileType: string) {
+  if (!sourceFilePath) return '';
+  if (!sourceFilePath.startsWith(userId + '/')) throw new Error('The selected file does not belong to this account.');
+  const { data: file, error } = await userClient.storage.from('scouting-imports').download(sourceFilePath);
+  if (error || !file) throw new Error(error?.message || 'The original uploaded file could not be downloaded.');
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (/pdf/i.test(sourceFileType || sourceFilePath)) {
+    const pdfParse = (await import('npm:pdf-parse@1.1.1')).default;
+    const parsed = await pdfParse(bytes);
+    return String(parsed.text || '').slice(0, 24000);
+  }
+  return new TextDecoder().decode(bytes).slice(0, 24000);
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (request.method !== 'POST') return responseJson({ error: 'Use POST.' }, 405);
@@ -57,11 +71,19 @@ Deno.serve(async (request) => {
   let body: any;
   try { body = await request.json(); } catch { return responseJson({ error: 'Request body must be JSON.' }, 400); }
   const lead = body?.lead;
-  const evidence = String(body?.evidence || '').slice(0, 12000);
+  const providedEvidence = String(body?.evidence || '').slice(0, 12000);
+  const sourceFilePath = String(body?.sourceFilePath || '').trim();
+  const sourceFileType = String(body?.sourceFileType || '').trim();
+  let originalFileEvidence = '';
+  if (sourceFilePath) {
+    try { originalFileEvidence = await readOriginalFile(userClient, authData.user.id, sourceFilePath, sourceFileType); }
+    catch (error) { return responseJson({ error: error instanceof Error ? error.message : 'The original uploaded file could not be read.' }, 422); }
+  }
+  const evidence = [originalFileEvidence, providedEvidence].filter(Boolean).join('\n\n').slice(0, 24000);
   const website = String(body?.website || '').trim();
   const scraped = body?.scraped || {};
   const prompt = String(body?.prompt || '').slice(0, 4000);
-  if (!lead || !evidence) return responseJson({ error: 'Saved website evidence and a selected lead are required.' }, 400);
+  if (!lead || (!evidence && !sourceFilePath)) return responseJson({ error: 'Select a lead and provide an uploaded source file or saved website evidence.' }, 400);
 
   const userPrompt = [
     'Analyze only the fetched website evidence below. Never claim to browse and never invent facts.',
@@ -71,7 +93,8 @@ Deno.serve(async (request) => {
     'Title: ' + String(scraped.title || ''),
     'Description: ' + String(scraped.description || ''),
     'Contact hints: ' + (Array.isArray(scraped.contactHints) ? scraped.contactHints.join('; ') : ''),
-    'Fetched text: ' + evidence,
+    'Original uploaded file evidence: ' + (originalFileEvidence || 'No original file attached.'),
+    'Fetched website evidence: ' + (providedEvidence || 'No separate website scrape was provided.'),
     'Instruction: ' + prompt,
     'Return JSON exactly as {"website_name":"","owner_name":"","merits":[],"demerits":[],"concentration":"","improvements":[],"contact_hints":[]}.',
   ].join('\n');
