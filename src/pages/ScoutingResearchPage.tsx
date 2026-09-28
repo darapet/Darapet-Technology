@@ -56,7 +56,6 @@ export function ScoutingResearchPage() {
   const [scraping, setScraping] = useState(false);
   const [researching, setResearching] = useState(false);
   const [prompt, setPrompt] = useState('Review only the fetched website evidence. Identify visible merits, demerits, the website\'s main area of concentration, concrete areas for improvement, and public contact hints. Never invent facts.');
-  const [groqKey, setGroqKey] = useState('');
 
   useEffect(() => {
     if (!user) return;
@@ -83,7 +82,7 @@ export function ScoutingResearchPage() {
 
   const callGroq = async (evidence: string, lead: ScoutLead, website: string, scraped: ScrapeResult) => {
     const { data, error } = await supabase.functions.invoke('groq-scouting-research', {
-      body: { evidence, lead, website, scraped, prompt },
+      body: { evidence, lead, website, scraped, prompt, sourceFilePath: lead.source_file_path || '', sourceFileType: lead.source_file_type || '' },
     });
     if (error) {
       let message = error.message || 'Groq research failed.';
@@ -164,63 +163,71 @@ export function ScoutingResearchPage() {
 
   const researchLead = async (lead: ScoutLead) => {
     const stored = results[lead.id];
-    if (!stored || stored.status !== 'scraped') return;
-    const website = stored.website || websiteForLead(lead);
-    const evidence = stored.extractedText || stored.description || '';
+    const hasOriginalPdf = Boolean(lead.source_file_path && /pdf/i.test(lead.source_file_type || lead.source_file_name || lead.source_file_path));
+    if ((!stored || stored.status !== 'scraped') && !hasOriginalPdf) return;
+    const website = stored?.website || websiteForLead(lead);
+    const evidence = stored?.extractedText || stored?.description || '';
+    const base: ResearchSnapshot = stored || {
+      leadId: lead.id, website, status: 'scraped', success: true, httpStatus: null,
+      statusText: 'The original uploaded PDF will be read when Groq Search runs.',
+      websiteName: lead.business_name, ownerName: lead.owner_name || '', description: '',
+      extractedText: '', merits: [], demerits: [], concentration: '', improvements: [], contactHints: [],
+    };
     setActiveId(lead.id);
     try {
-      let ai: Awaited<ReturnType<typeof callGroq>> = null;
-      if (evidence) {
-        try {
-          ai = await callGroq(evidence, lead, website, { success: stored.success, status: stored.httpStatus, statusText: stored.statusText, finalUrl: stored.finalUrl, title: stored.title, description: stored.description, extractedText: stored.extractedText, contactHints: stored.contactHints, error: stored.error });
-        } catch (error) {
-          toast({ variant: 'destructive', title: 'AI analysis skipped', description: error instanceof Error ? error.message : 'The website text was saved without AI analysis.' });
-        }
-      }
+      const ai = await callGroq(evidence, lead, website, {
+        success: base.success, status: base.httpStatus, statusText: base.statusText, finalUrl: base.finalUrl,
+        title: base.title, description: base.description, extractedText: base.extractedText,
+        contactHints: base.contactHints, error: base.error,
+      });
       const snapshot: ResearchSnapshot = {
-        ...stored,
-        status: 'complete',
-        website,
-        websiteName: ai?.website_name || stored.websiteName || stored.title || '',
-        ownerName: ai?.owner_name || stored.ownerName || lead.owner_name || '',
-        merits: Array.isArray(ai?.merits) ? ai!.merits!.slice(0, 6) : (stored.success ? ['Website text was fetched successfully.'] : []),
-        demerits: Array.isArray(ai?.demerits) ? ai!.demerits!.slice(0, 6) : (stored.success ? [] : [stored.error || 'The website returned an error.']),
-        concentration: ai?.concentration || stored.description || '',
-        improvements: Array.isArray(ai?.improvements) ? ai!.improvements!.slice(0, 6) : [],
-        contactHints: Array.from(new Set([...(stored.contactHints || []), ...(ai?.contact_hints || [])])).slice(0, 8),
+        ...base, status: 'complete', success: Boolean(ai) || base.success, website,
+        websiteName: ai?.website_name || base.websiteName || base.title || lead.business_name,
+        ownerName: ai?.owner_name || base.ownerName || lead.owner_name || '',
+        merits: Array.isArray(ai?.merits) ? ai.merits.slice(0, 6) : (base.success ? ['The original uploaded file was read successfully.'] : []),
+        demerits: Array.isArray(ai?.demerits) ? ai.demerits.slice(0, 6) : [],
+        concentration: ai?.concentration || base.description || '',
+        improvements: Array.isArray(ai?.improvements) ? ai.improvements.slice(0, 6) : [],
+        contactHints: Array.from(new Set([...(base.contactHints || []), ...(ai?.contact_hints || [])])).slice(0, 8),
         analyzedAt: new Date().toISOString(),
       };
-      const summary = [snapshot.websiteName, snapshot.description, snapshot.concentration].filter(Boolean).join(' — ') || snapshot.error || 'Research complete.';
-      const { error: saveError } = await db.from('scout_leads').update({ research_status: snapshot.success ? 'researched' : 'needs_manual', research_summary: summary, pain_points: snapshot.demerits, research_data: snapshot }).eq('id', lead.id).eq('user_id', user!.id);
+      const summary = [snapshot.websiteName, snapshot.description, snapshot.concentration].filter(Boolean).join(' — ') || 'Research complete.';
+      const { error: saveError } = await db.from('scout_leads').update({ research_status: 'researched', research_summary: summary, pain_points: snapshot.demerits, research_data: snapshot }).eq('id', lead.id).eq('user_id', user!.id);
       if (saveError) throw new Error(saveError.message);
       setResults(current => ({ ...current, [lead.id]: snapshot }));
-      setLeads(current => current.map(item => item.id === lead.id ? { ...item, research_status: snapshot.success ? 'researched' : 'needs_manual', research_summary: summary, pain_points: snapshot.demerits, research_data: snapshot } : item));
+      setLeads(current => current.map(item => item.id === lead.id ? { ...item, research_status: 'researched', research_summary: summary, pain_points: snapshot.demerits, research_data: snapshot } : item));
     } catch (error) {
-      const snapshot: ResearchSnapshot = { ...stored, status: 'complete', success: false, error: error instanceof Error ? error.message : 'Research failed.', demerits: ['The website could not be analyzed.'], analyzedAt: new Date().toISOString() };
+      const snapshot: ResearchSnapshot = { ...base, status: 'failed', success: false, error: error instanceof Error ? error.message : 'Research failed.', demerits: ['The uploaded file could not be analyzed.'], analyzedAt: new Date().toISOString() };
       setResults(current => ({ ...current, [lead.id]: snapshot }));
       await db.from('scout_leads').update({ research_status: 'needs_manual', research_summary: snapshot.error, research_data: snapshot }).eq('id', lead.id).eq('user_id', user!.id);
+      toast({ variant: 'destructive', title: 'Groq research failed', description: snapshot.error });
     }
   };
 
   const runResearch = async () => {
     if (scraping || researching) return;
-    const scrapedTargets = websiteTargets.filter(target => results[target.lead.id]?.status === 'scraped');
-    if (!scrapedTargets.length) {
-      toast({ variant: 'destructive', title: 'Scrape the websites first', description: 'Click Scrape websites, review the saved text, then click Do research.' });
+    const targets = leads.filter(lead => {
+      const stored = results[lead.id];
+      const originalPdf = Boolean(lead.source_file_path && /pdf/i.test(lead.source_file_type || lead.source_file_name || lead.source_file_path));
+      return stored?.status === 'scraped' || originalPdf;
+    });
+    if (!targets.length) {
+      toast({ variant: 'destructive', title: 'Select a lead with a source file or scrape first', description: 'Choose a lead with an imported PDF, or click Scrape websites before Groq Search.' });
       return;
     }
     setResearching(true);
     try {
-      for (const target of scrapedTargets) await researchLead(target.lead);
-      toast({ title: 'Research finished', description: 'The saved website evidence was analyzed. Review the findings below before personalizing email.' });
+      for (const lead of targets) await researchLead(lead);
+      toast({ title: 'Research finished', description: 'Groq read the selected lead source and saved the findings. Review them before personalizing email.' });
     } finally {
       setActiveId(null);
       setResearching(false);
     }
   };
 
+  const originalPdfCount = leads.filter(lead => lead.source_file_path && /pdf/i.test(lead.source_file_type || lead.source_file_name || lead.source_file_path)).length;
   const scrapedCount = websiteTargets.filter(target => results[target.lead.id]?.status === 'scraped' || results[target.lead.id]?.status === 'complete').length;
-  const completed = websiteTargets.filter(target => results[target.lead.id]?.status === 'complete' || results[target.lead.id]?.status === 'failed').length;
+  const completed = leads.filter(lead => results[lead.id]?.status === 'complete' || results[lead.id]?.status === 'failed').length;
   const currentResult = activeId ? results[activeId] : null;
   const progressCount = scraping ? scrapedCount : researching ? completed : scrapedCount;
   const currentLead = activeId ? leads.find(lead => lead.id === activeId) : null;
@@ -234,14 +241,14 @@ export function ScoutingResearchPage() {
           <Link href="/scouting" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-4"><ArrowLeft className="w-4 h-4" /> Back to scouting</Link>
           <div className="flex items-center gap-2 text-primary text-sm font-semibold"><Search className="w-4 h-4" /> Lead research</div>
           <h1 className="text-3xl font-bold tracking-tight mt-2">Research websites one by one</h1>
-          <p className="text-muted-foreground mt-2 max-w-2xl">First scrape and save every website's text so you can see the evidence. Only after that does Do research analyze it.</p>
+          <p className="text-muted-foreground mt-2 max-w-2xl">Choose a lead first. If it has an imported PDF, Groq reads the original file when you click Groq Search PDF; website scraping remains available for leads without a file.</p>
         </div>
-        <div className="flex flex-wrap gap-2 shrink-0"><Button variant="outline" onClick={() => setLocation('/scouting')}><ArrowLeft className="w-4 h-4 mr-2" /> Scouting</Button><Button variant="outline" onClick={() => void runScrape()} disabled={scraping || researching || !websiteTargets.length}>{scraping ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Globe2 className="w-4 h-4 mr-2" />} {scraping ? 'Scraping…' : 'Scrape websites'}</Button><Button onClick={() => void runResearch()} disabled={scraping || researching || !scrapedCount}>{researching ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />} {researching ? 'Doing research…' : 'Do research'}</Button></div>
+        <div className="flex flex-wrap gap-2 shrink-0"><Button variant="outline" onClick={() => setLocation('/scouting')}><ArrowLeft className="w-4 h-4 mr-2" /> Scouting</Button><Button variant="outline" onClick={() => void runScrape()} disabled={scraping || researching || !websiteTargets.length}>{scraping ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Globe2 className="w-4 h-4 mr-2" />} {scraping ? 'Scraping…' : 'Scrape websites'}</Button><Button onClick={() => void runResearch()} disabled={scraping || researching || (!scrapedCount && !originalPdfCount)}>{researching ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />} {researching ? 'Groq is reading…' : originalPdfCount ? 'Groq Search PDF' : 'Do research'}</Button></div>
       </div>
 
       <Card className="border-primary/20 bg-primary/[0.03]">
         <CardContent className="p-5 space-y-3">
-          <div className="flex items-center justify-between gap-3"><div><p className="font-semibold">Research progress</p><p className="text-sm text-muted-foreground">{scrapedCount} of {websiteTargets.length} website texts saved · {completed} researched</p></div>{activeId && <Badge variant="outline"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> {scraping ? 'Scraping website' : 'Doing research'}</Badge>}</div>
+          <div className="flex items-center justify-between gap-3"><div><p className="font-semibold">Research progress</p><p className="text-sm text-muted-foreground">{scrapedCount} website texts saved · {originalPdfCount} original PDF source{originalPdfCount === 1 ? '' : 's'} · {completed} researched</p></div>{activeId && <Badge variant="outline"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> {scraping ? 'Scraping website' : 'Doing research'}</Badge>}</div>
           <Progress value={websiteTargets.length ? Math.round((progressCount / websiteTargets.length) * 100) : 0} />
           {activeId && <p className="text-sm text-muted-foreground break-all">{scraping ? 'Scraping website ' : 'Analyzing saved evidence from '}{(currentResult?.website || currentLead?.website || 'with no detected URL')}…</p>}
         </CardContent>
