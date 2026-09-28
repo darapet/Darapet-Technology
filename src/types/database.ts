@@ -27,6 +27,7 @@ export type Database = {
           mailgun_domain: string | null;
           sendgrid_api_key: string | null;
           groq_api_key: string | null;
+          openai_api_key: string | null;
           smtp_host: string | null;
           smtp_port: number | null;
           smtp_user: string | null;
@@ -61,6 +62,7 @@ export type Database = {
           mailgun_domain?: string | null;
           sendgrid_api_key?: string | null;
           groq_api_key?: string | null;
+          openai_api_key?: string | null;
           smtp_host?: string | null;
           smtp_port?: number | null;
           smtp_user?: string | null;
@@ -94,6 +96,7 @@ export type Database = {
           mailgun_domain?: string | null;
           sendgrid_api_key?: string | null;
           groq_api_key?: string | null;
+          openai_api_key?: string | null;
           smtp_host?: string | null;
           smtp_port?: number | null;
           smtp_user?: string | null;
@@ -484,6 +487,7 @@ export type Database = {
           google_search_api_key: string | null;
           google_search_engine_id: string | null;
           groq_api_key: string | null;
+          openai_api_key: string | null;
           signature_name: string | null;
           signature_title: string | null;
           signature_text: string | null;
@@ -501,6 +505,7 @@ export type Database = {
           google_search_api_key?: string | null;
           google_search_engine_id?: string | null;
           groq_api_key?: string | null;
+          openai_api_key?: string | null;
           signature_name?: string | null;
           signature_title?: string | null;
           signature_text?: string | null;
@@ -518,6 +523,7 @@ export type Database = {
           google_search_api_key?: string | null;
           google_search_engine_id?: string | null;
           groq_api_key?: string | null;
+          openai_api_key?: string | null;
           signature_name?: string | null;
           signature_title?: string | null;
           signature_text?: string | null;
