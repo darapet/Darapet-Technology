@@ -551,7 +551,7 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
-          <GroqKeysManager userId={user.id} />
+          {user && <GroqKeysManager userId={user.id} />}
 
           <Card>
             <CardHeader>
