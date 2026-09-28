@@ -132,8 +132,9 @@ export function ScoutingPage() {
         senderName: profile?.company || profile?.name || 'Darapet Technology',
       },
     });
+    if (data?.error) throw new Error(data.error);
     if (error) throw new Error(error.message || 'The OpenAI scouting agent failed.');
-    if (!data?.subject || !data?.body) throw new Error(data?.error || 'The OpenAI scouting agent returned no draft.');
+    if (!data?.subject || !data?.body) throw new Error('The OpenAI scouting agent returned no draft.');
     return data as { subject: string; body: string; research?: Partial<ResearchSnapshot>; searched?: boolean };
   };
 
