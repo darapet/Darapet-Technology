@@ -42,6 +42,7 @@ export type ResearchSnapshot = {
   ownerName?: string;
   description?: string;
   extractedText?: string;
+  contentType?: string;
   error?: string;
   merits: string[];
   demerits: string[];
@@ -318,7 +319,7 @@ export function parsePastedLeads(text: string, sourceFileName = 'ChatGPT pasted 
         ? (parsed.leads || parsed.contacts || parsed.data || parsed.rows)
         : null;
       const rows = Array.isArray(parsed) ? parsed : Array.isArray(nestedRows) ? nestedRows : [parsed];
-      return rows.map((row, index) => row && typeof row === 'object'
+      return rows.map((row, index): ScoutLead | null => row && typeof row === 'object'
         ? structuredLeadFromObject(row as Record<string, unknown>, index + 1, sourceFileName)
         : null).filter((lead): lead is ScoutLead => Boolean(lead));
     } catch {
