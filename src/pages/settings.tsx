@@ -537,8 +537,23 @@ export function SettingsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2"><Key className="w-4 h-4" /> OpenAI scouting</CardTitle>
-              <CardDescription>Each user connects their own OpenAI API key. It is used only for that user’s scouting and personalization requests.</CardDescription>
+              <CardTitle className="text-base flex items-center gap-2"><Key className="w-4 h-4" /> Groq scouting (free)</CardTitle>
+              <CardDescription>Use Groq for scouting and personalization without OpenAI billing. Groq is used with your saved lead and website research evidence.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <Label>Groq API Key</Label>
+                <SecretInput autoComplete="new-password" value={form.groq_api_key} onChange={e => set('groq_api_key', e.target.value)} placeholder="gsk_..." className="bg-muted/50"
+                  visible={visibleKeys.groq_api_key} onToggle={() => toggleVisible('groq_api_key')} />
+                <p className="text-xs text-muted-foreground">Create a free key at console.groq.com. It is saved to your profile. Groq is preferred whenever this field is filled.</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2"><Key className="w-4 h-4" /> OpenAI scouting fallback</CardTitle>
+              <CardDescription>Optional fallback if no Groq key is configured.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
