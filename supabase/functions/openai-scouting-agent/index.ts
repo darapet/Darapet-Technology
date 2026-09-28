@@ -65,7 +65,7 @@ Deno.serve(async (request) => {
   if (legacyGroqKey && !seen.has(legacyGroqKey)) groqKeys.push({ id: null, apiKey: legacyGroqKey });
   const openAiApiKey = String(profile?.openai_api_key || '').trim();
   const provider = groqKeys.length ? 'groq' : 'openai';
-  if (provider === 'openai' && !openAiApiKey) return responseJson({ error: 'Add a Groq API key in Settings before using scouting.' }, 422);
+  if (provider === 'openai' && !openAiApiKey) return responseJson({ error: 'Add a Groq or OpenAI API key in Settings before using scouting.' }, 422);
 
   let body: any;
   try { body = await request.json(); } catch { return responseJson({ error: 'Request body must be JSON.' }, 400); }
@@ -99,5 +99,5 @@ Deno.serve(async (request) => {
   const parsed = parseJson(outputText(result));
   if (!parsed?.subject || !parsed?.body) return responseJson({ error: 'The AI provider returned no usable email draft.' }, 502);
   const research = parsed.research && typeof parsed.research === 'object' ? parsed.research : {};
-  return responseJson({ subject: String(parsed.subject), body: String(parsed.body), research: { websiteName: String(research.websiteName || lead.business_name || ''), description: String(research.description || ''), merits: Array.isArray(research.merits) ? research.merits.map(String).slice(0, 8) : [], demerits: Array.isArray(research.demerits) ? research.demerits.map(String).slice(0, 8) : [], concentration: String(research.concentration || ''), improvements: Array.isArray(research.improvements) ? research.improvements.map(String).slice(0, 8) : [], contactHints: Array.isArray(research.contactHints) ? research.contactHints.map(String).slice(0, 8) : [] }, searched: false, provider, model: provider === 'groq' ? 'llama-3.1-8b-instant' : 'gpt-4.1-mini' });
+  return responseJson({ subject: String(parsed.subject), body: String(parsed.body), research: { websiteName: String(research.websiteName || lead.business_name || ''), description: String(research.description || ''), merits: Array.isArray(research.merits) ? research.merits.map(String).slice(0, 8) : [], demerits: Array.isArray(research.demerits) ? research.demerits.map(String).slice(0, 8) : [], concentration: String(research.concentration || ''), improvements: Array.isArray(research.improvements) ? research.improvements.map(String).slice(0, 8) : [], contactHints: Array.isArray(research.contactHints) ? research.contactHints.map(String).slice(0, 8) : [] }, searched: provider === 'openai' && Boolean(website), provider, model: provider === 'groq' ? 'llama-3.1-8b-instant' : 'gpt-4.1-mini' });
 });
