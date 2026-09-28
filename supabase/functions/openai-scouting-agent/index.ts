@@ -27,6 +27,7 @@ function parseJson(value: string): any | null {
 
 function outputText(body: any) {
   if (typeof body?.output_text === 'string') return body.output_text;
+  if (typeof body?.choices?.[0]?.message?.content === 'string') return body.choices[0].message.content;
   return (Array.isArray(body?.output) ? body.output : [])
     .flatMap((item: any) => Array.isArray(item?.content) ? item.content : [])
     .filter((part: any) => part?.type === 'output_text' && typeof part?.text === 'string')
@@ -76,13 +77,16 @@ Deno.serve(async (request) => {
 
   const { data: profile, error: profileError } = await userClient
     .from('profiles')
-    .select('openai_api_key')
+    .select('groq_api_key, openai_api_key')
     .eq('id', authData.user.id)
     .maybeSingle();
   if (profileError) return responseJson({ error: 'Could not load your OpenAI connection from your profile.' }, 500);
 
-  const apiKey = String(profile?.openai_api_key || '').trim();
-  if (!apiKey) return responseJson({ error: 'Add your OpenAI API key in Settings before using scouting.' }, 422);
+  const groqApiKey = String(profile?.groq_api_key || '').trim();
+  const openAiApiKey = String(profile?.openai_api_key || '').trim();
+  const provider = groqApiKey ? 'groq' : 'openai';
+  const apiKey = groqApiKey || openAiApiKey;
+  if (!apiKey) return responseJson({ error: 'Add a Groq API key in Settings before using scouting.' }, 422);
 
   let body: any;
   try { body = await request.json(); } catch { return responseJson({ error: 'Request body must be JSON.' }, 400); }
@@ -93,32 +97,52 @@ Deno.serve(async (request) => {
 
   const rawData = JSON.stringify(lead.raw_data || {}).slice(0, 18000);
   const website = String(lead.website || '').trim();
-  const instruction = 'Research this exact business using the official website and public web information when available. Do not use information from other businesses. If evidence is unavailable, say so instead of inventing it. Then write one concise, respectful outreach email from ' + senderName + ' to ' + recipientEmail + '. Mention one or two real observations and one practical improvement. Keep the email under 180 words and end with a polite unsubscribe sentence.';
+  const instruction = provider === 'groq'
+    ? 'Use only the lead data and saved research evidence provided below. Do not claim to browse the web and do not invent facts. Then write one concise, respectful outreach email from ' + senderName + ' to ' + recipientEmail + '. Mention one or two supported observations and one practical improvement. Keep the email under 180 words and end with a polite unsubscribe sentence.'
+    : 'Research this exact business using the official website and public web information when available. Do not use information from other businesses. If evidence is unavailable, say so instead of inventing it. Then write one concise, respectful outreach email from ' + senderName + ' to ' + recipientEmail + '. Mention one or two real observations and one practical improvement. Keep the email under 180 words and end with a polite unsubscribe sentence.';
   const userPrompt = [
     instruction,
     'Business: ' + String(lead.business_name || ''),
     'Owner/contact: ' + String(lead.owner_name || ''),
     'Website: ' + (website || 'Not provided'),
-    'Existing research fields: ' + JSON.stringify(lead.research_data || {}),
+    'Existing research fields: ' + JSON.stringify(lead.research_data || {}).slice(0, 12000),
     'All fields from the lead source: ' + rawData,
     'Return JSON only with this shape: {"research":{"websiteName":"","description":"","merits":[],"demerits":[],"concentration":"","improvements":[],"contactHints":[]},"subject":"","body":""}.',
   ].join('\n');
 
   try {
-    const upstream = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'gpt-4.1-mini',
-        tools: [{ type: 'web_search_preview' }],
-        input: [
-          { role: 'system', content: [{ type: 'input_text', text: 'You are a careful lead-research and email-drafting assistant. Keep each request isolated to the one lead provided. Return only valid JSON.' }] },
-          { role: 'user', content: [{ type: 'input_text', text: userPrompt }] },
-        ],
-      }),
-    });
+    const upstream = provider === 'groq'
+      ? await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'llama-3.3-70b-versatile',
+            messages: [
+              { role: 'system', content: 'You are a careful lead-research and email-drafting assistant. Use only the evidence provided. Return only valid JSON.' },
+              { role: 'user', content: userPrompt },
+            ],
+            temperature: 0.2,
+            max_tokens: 900,
+            response_format: { type: 'json_object' },
+          }),
+        })
+      : await fetch('https://api.openai.com/v1/responses', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'gpt-4.1-mini',
+            tools: [{ type: 'web_search_preview' }],
+            input: [
+              { role: 'system', content: [{ type: 'input_text', text: 'You are a careful lead-research and email-drafting assistant. Keep each request isolated to the one lead provided. Return only valid JSON.' }] },
+              { role: 'user', content: [{ type: 'input_text', text: userPrompt }] },
+            ],
+          }),
+        });
     const result = await upstream.json();
-    if (!upstream.ok) return openAiErrorResponse(upstream, result);
+    if (!upstream.ok) {
+      if (provider === 'openai') return openAiErrorResponse(upstream, result);
+      return responseJson({ error: result?.error?.message || 'Groq request failed.', provider: 'groq' }, upstream.status);
+    }
     const parsed = parseJson(outputText(result));
     if (!parsed?.subject || !parsed?.body) return responseJson({ error: 'OpenAI returned no usable email draft.' }, 502);
     const research = parsed.research && typeof parsed.research === 'object' ? parsed.research : {};
@@ -134,8 +158,9 @@ Deno.serve(async (request) => {
         improvements: Array.isArray(research.improvements) ? research.improvements.map(String).slice(0, 8) : [],
         contactHints: Array.isArray(research.contactHints) ? research.contactHints.map(String).slice(0, 8) : [],
       },
-      searched: Boolean(website),
-      model: 'gpt-4.1-mini',
+      searched: provider === 'openai' && Boolean(website),
+      provider,
+      model: provider === 'groq' ? 'llama-3.3-70b-versatile' : 'gpt-4.1-mini',
     });
   } catch (error) {
     return responseJson({ error: error instanceof Error ? error.message : 'OpenAI request failed.' }, 502);
