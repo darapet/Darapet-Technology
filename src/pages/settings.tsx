@@ -19,6 +19,7 @@ import { SocialIcon } from '@/data/socialIcons';
 import type { SocialLink } from '@/pages/email/emailTemplates';
 import { uploadImageToCloudinary } from '@/lib/cloudinary';
 import { AssetLibrary } from '@/components/AssetLibrary';
+import { GroqKeysManager } from '@/components/GroqKeysManager';
 
 // ─── Secret input ─────────────────────────────────────────────────────────────
 
@@ -549,6 +550,8 @@ export function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+
+          <GroqKeysManager userId={user.id} />
 
           <Card>
             <CardHeader>
