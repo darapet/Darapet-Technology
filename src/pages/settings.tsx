@@ -22,7 +22,7 @@ import { AssetLibrary } from '@/components/AssetLibrary';
 
 // ─── Secret input ─────────────────────────────────────────────────────────────
 
-type SecretField = 'brevo_api_key' | 'sendgrid_api_key' | 'mailgun_api_key' | 'smtp_pass' | 'groq_api_key';
+type SecretField = 'brevo_api_key' | 'sendgrid_api_key' | 'mailgun_api_key' | 'smtp_pass' | 'groq_api_key' | 'openai_api_key';
 
 function SecretInput({ visible, onToggle, ...props }: ComponentProps<typeof Input> & { visible: boolean; onToggle: () => void }) {
   return (
@@ -233,7 +233,7 @@ export function SettingsPage() {
   const [sigPreview, setSigPreview] = useState('');
   const [logoPreview, setLogoPreview] = useState('');
   const [visibleKeys, setVisibleKeys] = useState<Record<SecretField, boolean>>({
-    brevo_api_key: false, sendgrid_api_key: false, mailgun_api_key: false, smtp_pass: false, groq_api_key: false,
+    brevo_api_key: false, sendgrid_api_key: false, mailgun_api_key: false, smtp_pass: false, groq_api_key: false, openai_api_key: false,
   });
   const toggleVisible = (field: SecretField) => setVisibleKeys(prev => ({ ...prev, [field]: !prev[field] }));
   const [smtpAdvancedOpen, setSmtpAdvancedOpen] = useState(false);
@@ -247,7 +247,7 @@ export function SettingsPage() {
     name: '', company: '', phone: '', description: '',
     email_daily_limit: '', brand_color: '#3B82F6',
     brevo_api_key: '', sendgrid_api_key: '', mailgun_api_key: '', mailgun_domain: '',
-    groq_api_key: '',
+    groq_api_key: '', openai_api_key: '',
     smtp_host: '', smtp_port: '', smtp_user: '', smtp_pass: '', smtp_secure: false,
     active_smtp: 'brevo',
   });
@@ -268,6 +268,7 @@ export function SettingsPage() {
       mailgun_api_key: profile.mailgun_api_key || '',
       mailgun_domain: profile.mailgun_domain || '',
       groq_api_key: profile.groq_api_key || '',
+      openai_api_key: profile.openai_api_key || '',
       smtp_host: profile.smtp_host || '',
       smtp_port: profile.smtp_port?.toString() || '',
       smtp_user: profile.smtp_user || '',
@@ -349,6 +350,7 @@ export function SettingsPage() {
         mailgun_api_key: form.mailgun_api_key,
         mailgun_domain: form.mailgun_domain,
         groq_api_key: form.groq_api_key,
+        openai_api_key: form.openai_api_key,
         smtp_host: form.smtp_host,
         smtp_port: form.smtp_port ? Number(form.smtp_port) : null,
         smtp_user: form.smtp_user,
@@ -535,15 +537,15 @@ export function SettingsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2"><Key className="w-4 h-4" /> AI Writing (Groq)</CardTitle>
-              <CardDescription>Optional: add your own key to use AI email generation</CardDescription>
+              <CardTitle className="text-base flex items-center gap-2"><Key className="w-4 h-4" /> OpenAI scouting</CardTitle>
+              <CardDescription>Each user connects their own OpenAI API key. It is used only for that user’s scouting and personalization requests.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                <Label>Groq API Key</Label>
-                <SecretInput autoComplete="new-password" value={form.groq_api_key} onChange={e => set('groq_api_key', e.target.value)} placeholder="gsk_... (or leave blank to use the admin default)" className="bg-muted/50"
-                  visible={visibleKeys.groq_api_key} onToggle={() => toggleVisible('groq_api_key')} />
-                <p className="text-xs text-muted-foreground">From console.groq.com. If left blank, the admin's default key (if any) is used.</p>
+                <Label>OpenAI API Key</Label>
+                <SecretInput autoComplete="new-password" value={form.openai_api_key} onChange={e => set('openai_api_key', e.target.value)} placeholder="sk-..." className="bg-muted/50"
+                  visible={visibleKeys.openai_api_key} onToggle={() => toggleVisible('openai_api_key')} />
+                <p className="text-xs text-muted-foreground">Add your key from platform.openai.com. Your key is saved to your own profile and is never shared with other users.</p>
               </div>
             </CardContent>
           </Card>
