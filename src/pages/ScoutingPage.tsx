@@ -147,7 +147,7 @@ export function ScoutingPage() {
       throw new Error(message);
     }
     if (!data?.subject || !data?.body) throw new Error('The OpenAI scouting agent returned no draft.');
-    return data as { subject: string; body: string; research?: Partial<ResearchSnapshot>; searched?: boolean };
+    return data as { subject: string; body: string; research?: Partial<ResearchSnapshot>; searched?: boolean; provider?: 'groq' | 'openai' };
   };
 
   const personalizeLead = async (lead: ScoutLead) => {
@@ -165,7 +165,7 @@ export function ScoutingPage() {
           status: 'complete',
           success: true,
           httpStatus: null,
-          statusText: result.searched ? 'OpenAI web research completed' : 'OpenAI draft based on saved lead data',
+          statusText: result.provider === 'groq' ? 'Groq draft created from saved lead data' : result.searched ? 'OpenAI web research completed' : 'OpenAI draft based on saved lead data',
           websiteName: result.research.websiteName || lead.business_name,
           description: result.research.description || '',
           ownerName: lead.owner_name || '',
